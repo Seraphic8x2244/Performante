@@ -1,0 +1,7 @@
+## Interface: 11200
+## Title: Performante-dev
+## Notes: Lightweight Vanilla performance diagnostics.
+## Version: 0.1.0-dev
+
+locales\enUS.lua
+Performante.lua
