@@ -1,7 +1,7 @@
 -- Performante
 -- Vanilla WoW 1.12.1 / Lua 5.0.3
 -- 0.1 baseline: live CHAT_MSG_ADDON counter by communication prefix.
--- 0.1.1: persist window visibility with SavedVariables.
+-- 0.1.1: remember whether the monitor window was open or closed.
 
 local ADDON_NAME = "Performante"
 local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version")
@@ -15,14 +15,13 @@ local paused = false
 local dirty = true
 local updateElapsed = 0
 local MAX_ROWS = 12
-local variablesLoaded = false
 
 local function SetWindowShown(shown)
     if not PerformanteDB then
         PerformanteDB = {}
     end
 
-    PerformanteDB.shown = shown and 1 or nil
+    PerformanteDB.shown = shown
 
     if shown then
         Performante:Show()
@@ -36,8 +35,8 @@ local function RestoreWindowVisibility()
         PerformanteDB = {}
     end
 
-    if PerformanteDB.shown == nil and not variablesLoaded then
-        PerformanteDB.shown = 1
+    if PerformanteDB.shown == nil then
+        PerformanteDB.shown = true
     end
 
     if PerformanteDB.shown then
@@ -141,8 +140,7 @@ local function BuildSortedList()
     end)
 end
 
-local function Performante:Hide()
-Refresh()
+local function Refresh()
     if not dirty then
         return
     end
@@ -213,16 +211,6 @@ Performante:RegisterEvent("CHAT_MSG_ADDON")
 Performante:RegisterEvent("VARIABLES_LOADED")
 Performante:SetScript("OnEvent", function()
     if event == "VARIABLES_LOADED" then
-        variablesLoaded = true
-
-        if not PerformanteDB then
-            PerformanteDB = {}
-        end
-
-        if PerformanteDB.shown == nil then
-            PerformanteDB.shown = 1
-        end
-
         RestoreWindowVisibility()
     elseif event == "CHAT_MSG_ADDON" then
         if paused then
@@ -284,4 +272,5 @@ SlashCmdList["PERFORMANTE"] = function(msg)
     end
 end
 
+Performante:Hide()
 Refresh()
