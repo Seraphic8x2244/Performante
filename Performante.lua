@@ -25,7 +25,9 @@ local hitch33 = 0
 local hitch50 = 0
 local hitch100 = 0
 local hitch200 = 0
-local hitchLog = {}
+local hitchTimes = {}
+local hitchValues = {}
+local hitchLogCount = 0
 local HITCH_LOG_LIMIT = 4
 local HITCH_LOG_THRESHOLD = 50
 
@@ -118,8 +120,8 @@ Performante:EnableMouse(1)
 Performante:RegisterForDrag("LeftButton")
 Performante:SetFrameStrata("DIALOG")
 Performante:SetBackdrop({
-    bgFile = "Interface\Tooltips\UI-Tooltip-Background",
-    edgeFile = "Interface\Tooltips\UI-Tooltip-Border",
+    bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
     tile = true,
     tileSize = 16,
     edgeSize = 16,
@@ -336,11 +338,10 @@ local function RefreshFrametime()
     hitch100Label:SetText("> 100 ms: " .. hitch100)
     hitch200Label:SetText("> 200 ms: " .. hitch200)
 
-    local numHitches = table.getn(hitchLog)
     local index
     for index = 1, HITCH_LOG_LIMIT do
-        if index <= numHitches then
-            hitchRows[index]:SetText(FormatSessionTime(hitchLog[index].time) .. "   " .. string.format("%.1f ms", hitchLog[index].ms))
+        if index <= hitchLogCount then
+            hitchRows[index]:SetText(FormatSessionTime(hitchTimes[index]) .. "   " .. string.format("%.1f ms", hitchValues[index]))
         elseif index == 1 then
             hitchRows[index]:SetText(L.NO_HITCHES)
         else
@@ -393,7 +394,7 @@ local function ResetAll()
     hitch50 = 0
     hitch100 = 0
     hitch200 = 0
-    hitchLog = {}
+    hitchLogCount = 0
 
     currentMemoryKb = gcinfo()
     memoryBaselineKb = currentMemoryKb
@@ -403,10 +404,17 @@ local function ResetAll()
 end
 
 local function AddHitch(frameMs)
-    table.insert(hitchLog, 1, { time = GetTime(), ms = frameMs })
+    local index
+    for index = HITCH_LOG_LIMIT, 2, -1 do
+        hitchTimes[index] = hitchTimes[index - 1]
+        hitchValues[index] = hitchValues[index - 1]
+    end
 
-    if table.getn(hitchLog) > HITCH_LOG_LIMIT then
-        table.remove(hitchLog)
+    hitchTimes[1] = GetTime()
+    hitchValues[1] = frameMs
+
+    if hitchLogCount < HITCH_LOG_LIMIT then
+        hitchLogCount = hitchLogCount + 1
     end
 end
 
