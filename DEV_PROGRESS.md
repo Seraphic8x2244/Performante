@@ -2,11 +2,11 @@
 
 ## Current
 - Branch: `dev`
-- Version: `0.1.1-dev`
-- Development/runtime head: `bcd1e20784f9c230f5134e2ba589c5037c6d4c45` — 0.1.1 visibility persistence built cleanly from the tested 0.1 baseline.
-- Latest status-only commit before this update: `ae9490519fa334c3127753da33b51e802f173604`.
+- Version: `0.2.1-dev`
+- Development/runtime head: `3727265ccc03a638b47be91bc41223df5ff4a358` — current 0.2.1-dev runtime build.
+- Latest tested baseline before 0.2: `bcd1e20784f9c230f5134e2ba589c5037c6d4c45` (`0.1.1-dev`).
 - Stable baseline: None; `main` currently contains only the repository README.
-- Goal: Build the agreed Performante 0.2 diagnostic revision on top of the now-tested 0.1.1 baseline.
+- Goal: Runtime-test the implemented Performante 0.2 diagnostics on top of the tested 0.1.1 baseline.
 - Current scope boundary: 0.2 adds lightweight frametime/hitch and Lua-memory diagnostics alongside Comms. Full event-storm capture/correlation is deferred.
 
 ## Current Design / Development Contract
@@ -29,8 +29,11 @@
 - `arg1` is treated as the communication prefix and is the aggregation key.
 - Counts are session/reset scoped only. `PerformanteDB` persists only whether the monitor window is shown.
 - Sender/channel/payload inspection is intentionally not part of the 0.1 baseline.
-- 0.2 frametime monitoring will use per-frame elapsed time and retain only a small recent hitch history.
-- 0.2 Lua memory monitoring will use the native 1.12.1 memory information available to Lua and show current/change-since-reset values.
+- 0.2 frametime monitoring uses a dedicated always-active driver frame so measurement continues while the visible window is closed.
+- Per-frame `OnUpdate` elapsed time is converted to milliseconds for current/worst frametime and threshold counters.
+- Hitch thresholds are cumulative at >33, >50, >100 and >200 ms.
+- The recent hitch log keeps four numeric time/value slots for frames >50 ms; it avoids per-hitch table allocation.
+- Lua memory uses native `gcinfo()` and is sampled on the 0.5-second refresh cadence, showing current use and change since reset.
 
 ### Active Decisions
 - Performante replaces the standalone AddonCommsMonitor concept.
@@ -45,6 +48,7 @@
   - show Lua memory and change since reset;
   - keep Reset/Pause behaviour simple and global where practical.
 - Full event monitoring/correlation is not part of 0.2 and is deferred to a later diagnostic build because broad event capture can itself add measurable overhead.
+- Closing the visible monitor must not stop diagnostics; only Pause stops comms, frametime and memory sampling.
 
 ## Recent Relevant Commits
 - Repository `main`: `bbe641fb6237fb740e338af766cca286f5c9e7f7` — initial repository commit.
@@ -52,7 +56,10 @@
 - `dev`: `ae9490519fa334c3127753da33b51e802f173604` — initial development handoff/status record.
 - `dev`: `e1a68d7d952952e8d7e0d2ee8a2da77bda59198b` — agreed 0.2 scope recorded.
 - `dev`: `bcd1e20784f9c230f5134e2ba589c5037c6d4c45` — clean 0.1.1-dev runtime revision adding window visibility persistence.
-- Two superseded intermediate visibility-edit commits exist immediately before `bcd1e207`; the clean runtime commit rebuilds from the known-good 0.1 baseline and is the state to test.
+- Two superseded intermediate visibility-edit commits exist immediately before `bcd1e207`; the clean runtime commit rebuilds from the known-good 0.1 baseline.
+- `dev`: `ec71a8bac0eed7bc8c663592cc110cf4ea08f8f8` — recorded the tested 0.1.1 baseline before 0.2 work.
+- `dev`: `8d04c2989839b44db7a98f908ddfb801196bbd13` — initial 0.2.0-dev implementation; superseded before runtime testing.
+- `dev`: `3727265ccc03a638b47be91bc41223df5ff4a358` — 0.2.1-dev; fixes Vanilla-safe backdrop escaping and removes per-hitch table allocation. This is the build to test.
 
 ## Completed / User-Verified
 - The precursor AddonCommsMonitor 0.1.0 was used by the user and its compact live layout was accepted.
@@ -61,14 +68,25 @@
 - Performante 0.1.1-dev at `bcd1e20784f9c230f5134e2ba589c5037c6d4c45` was user-tested: visibility persistence worked across reload and the existing monitor remained functional.
 
 ## Implemented / Awaiting Runtime Test
-- None for the tested 0.1.1 baseline. 0.2 implementation is the next runtime delta.
+- 0.2.1-dev preserves the tested Comms monitor and visibility persistence.
+- Added Comms / Frametime tabs in the same compact draggable window.
+- Frametime view shows current frame time, worst frame since reset, cumulative >33/>50/>100/>200 ms counts, and four recent >50 ms hitches.
+- Lua memory view shows current `gcinfo()` usage and delta from the last reset.
+- Reset clears comm counts, frametime/hitch data and establishes a fresh memory baseline.
+- Pause globally stops communication counting, frametime/hitch updates and memory sampling.
+- Diagnostics continue while the visible window is hidden; only the UI refresh is skipped when hidden.
+- Added `/perf comms`, `/perf frame` and `/perf frametime` shortcuts in addition to existing commands.
 
 ## Static / Automated Checks
 - Manual compatibility review against the VanillaTemplate 1.12.1/Lua 5.0.3 rules.
+- Verified current source uses 82 total `local` tokens even when counting function-body locals, comfortably below the 200-local compiler ceiling for the top-level chunk.
+- Verified addon texture paths contain Lua-safe doubled backslashes in source.
+- Verified 0.2 uses a separate always-active driver frame, native `gcinfo()`, all four agreed hitch thresholds, fixed-slot hitch history, and preserved visibility SavedVariable behavior.
 - Canonical `tools/lua50/check_lua50.sh` compiler check not run in this chat because the GitHub connector does not provide the private template checkout as an executable filesystem tree.
 
 ## Current Issues
 - None known in the tested 0.1.1-dev baseline.
+- 0.2.1-dev is implemented and statically reviewed but has not yet been exercised in the target client.
 
 ## Testing
 
@@ -76,14 +94,22 @@
 - Version/commit: `0.1.1-dev` / `bcd1e20784f9c230f5134e2ba589c5037c6d4c45`.
 - Passed: Open/closed state persisted across `/reload`; existing comms monitor functionality remained working.
 - Failed: None reported.
-- Not tested: 0.2 diagnostics, not yet implemented.
+- Not tested: Current 0.2.1-dev runtime delta.
 
 ### Next Runtime Test
-- Test the forthcoming `0.2.0-dev` Comms/Frametime UI, hitch counters/history, memory display, global Reset/Pause behaviour, and visibility persistence.
+1. Load `0.2.1-dev` and confirm no Lua error and both Comms / Frametime tabs render correctly.
+2. Confirm Comms still counts and sorts addon-message prefixes as before.
+3. On Frametime, confirm Current updates, Worst only rises until Reset, and memory shows a current value plus signed change.
+4. During normal play, confirm >33/>50/>100/>200 ms counters rise plausibly and recent >50 ms entries appear when hitches occur.
+5. Press Reset and confirm Comms, hitch counters/history and Worst clear while the memory delta returns near zero.
+6. Press Pause and confirm comms, frametime/hitches and memory stop changing; Resume should continue without a large artificial hitch.
+7. Close the window, continue playing briefly, reopen with `/perf frame`, and confirm diagnostics continued while hidden.
+8. Recheck close/open persistence across `/reload`.
 
 ## Planned / Next Work
-- Implement the agreed 0.2 scope now as `0.2.0-dev`.
-- Preserve the accepted ACM-derived layout while introducing a clear Comms/Frametime presentation.
+- Runtime-test `0.2.1-dev`.
+- Fix only issues found in that test before considering 0.2 accepted.
+- Keep event correlation as a separate later scope.
 
 ## Deferred / Out of Scope
 - Full event-storm capture/correlation.
@@ -98,4 +124,4 @@
 - External/runtime prerequisites: None beyond a Vanilla WoW 1.12.1-compatible client.
 
 ## Exact Next Step
-Implement `0.2.0-dev`: retain Comms, add Frametime current/worst values, 33/50/100/200 ms hitch counters, a short recent hitch log, and Lua memory current/change-since-reset. Keep full event capture deferred.
+Runtime-test `0.2.1-dev` commit `3727265ccc03a638b47be91bc41223df5ff4a358` using the numbered checks above; do not start event capture until 0.2 behavior is accepted.
