@@ -2,11 +2,11 @@
 
 ## Current
 - Branch: `dev`
-- Version: `0.2.1-dev`
-- Development/runtime head: `3727265ccc03a638b47be91bc41223df5ff4a358` — current 0.2.1-dev runtime build.
-- Latest tested baseline before 0.2: `bcd1e20784f9c230f5134e2ba589c5037c6d4c45` (`0.1.1-dev`).
+- Version: `0.2.3-dev`
+- Development/runtime head: `b051fa642c35a49e809600903b96d0e4984d5b45` — current 0.2.3-dev graph runtime build.
+- Latest tested baseline: `3727265ccc03a638b47be91bc41223df5ff4a358` (`0.2.1-dev`).
 - Stable baseline: None; `main` currently contains only the repository README.
-- Goal: Extend the now-tested 0.2.1 diagnostics with a compact live frametime graph while preserving the current Comms/Frametime layout.
+- Goal: Runtime-test the new compact Graph tab on top of the accepted 0.2.1 diagnostics.
 - Current scope boundary: 0.2 adds lightweight frametime/hitch and Lua-memory diagnostics alongside Comms. Full event-storm capture/correlation is deferred.
 
 ## Current Design / Development Contract
@@ -32,8 +32,12 @@
 - 0.2 frametime monitoring uses a dedicated always-active driver frame so measurement continues while the visible window is closed.
 - Per-frame `OnUpdate` elapsed time is converted to milliseconds for current/worst frametime and threshold counters.
 - Hitch thresholds are cumulative at >33, >50, >100 and >200 ms.
-- The recent hitch log keeps four numeric time/value slots for frames >50 ms; it avoids per-hitch table allocation.
 - Lua memory uses native `gcinfo()` and is sampled on the 0.5-second refresh cadence, showing current use and change since reset.
+- 0.2.3 replaces the textual recent-hitch timestamp list with a dedicated Graph tab.
+- Graph history uses 80 fixed numeric samples at 10 Hz (~8 seconds), stored in a preallocated ring buffer.
+- Each 100 ms graph bucket records the worst frame seen in that bucket; brief hitches therefore survive downsampling.
+- Graph rendering uses 80 pre-created texture bars, 33/50/100/200 ms guide lines and a fixed 200 ms visual ceiling. Numeric Worst remains uncapped.
+- Graph repaint is limited to 5 Hz and only occurs while the Graph tab is visible and monitoring is not paused.
 
 ### Active Decisions
 - Performante replaces the standalone AddonCommsMonitor concept.
@@ -44,11 +48,12 @@
   - add a Frametime view;
   - show current frame time and worst frame since reset;
   - count hitches above useful thresholds such as 33 ms, 50 ms, 100 ms and 200 ms;
-  - retain a short recent hitch log;
+  - provide a compact rolling frametime graph instead of client-uptime hitch timestamps;
   - show Lua memory and change since reset;
   - keep Reset/Pause behaviour simple and global where practical.
 - Full event monitoring/correlation is not part of 0.2 and is deferred to a later diagnostic build because broad event capture can itself add measurable overhead.
-- Closing the visible monitor must not stop diagnostics; only Pause stops comms, frametime and memory sampling.
+- Closing the visible monitor must not stop diagnostics; only Pause stops comms, frametime, graph sampling and memory sampling.
+- Pause also suppresses periodic graph/UI redraw work; button-driven state changes still refresh immediately.
 
 ## Recent Relevant Commits
 - Repository `main`: `bbe641fb6237fb740e338af766cca286f5c9e7f7` — initial repository commit.
@@ -59,7 +64,9 @@
 - Two superseded intermediate visibility-edit commits exist immediately before `bcd1e207`; the clean runtime commit rebuilds from the known-good 0.1 baseline.
 - `dev`: `ec71a8bac0eed7bc8c663592cc110cf4ea08f8f8` — recorded the tested 0.1.1 baseline before 0.2 work.
 - `dev`: `8d04c2989839b44db7a98f908ddfb801196bbd13` — initial 0.2.0-dev implementation; superseded before runtime testing.
-- `dev`: `3727265ccc03a638b47be91bc41223df5ff4a358` — 0.2.1-dev; fixes Vanilla-safe backdrop escaping and removes per-hitch table allocation. User-tested and accepted.
+- `dev`: `3727265ccc03a638b47be91bc41223df5ff4a358` — 0.2.1-dev; user-tested and accepted.
+- `dev`: `a4cef40e43df3cf2950123125a33d39b278406c9` — 0.2.2-dev initial Graph-tab implementation; superseded before runtime testing.
+- `dev`: `b051fa642c35a49e809600903b96d0e4984d5b45` — 0.2.3-dev; current Graph-tab build, additionally suppressing periodic redraw work while paused.
 
 ## Completed / User-Verified
 - The precursor AddonCommsMonitor 0.1.0 was used by the user and its compact live layout was accepted.
@@ -69,19 +76,28 @@
 - Performante 0.2.1-dev at `3727265ccc03a638b47be91bc41223df5ff4a358` was user-tested: Comms, Frametime, hitch counters/history, memory display, Reset/Pause, hidden-window collection and open/closed persistence all appeared to work.
 
 ## Implemented / Awaiting Runtime Test
-- None for the tested 0.2.1 baseline.
-- Next runtime delta: a dedicated Graph tab with an approximately 8-second rolling frametime visualization, sampled at 10 Hz using the worst frame in each 100 ms bucket.
+- Added a third Graph tab without increasing the 330x286 window size.
+- Removed the old textual recent-hitch timestamp list from Frametime; cumulative hitch counters remain.
+- Graph shows ~8 seconds from `-8s` to `now`, with 33/50/100/200 ms guide lines.
+- Uses 80 preallocated numeric samples at 10 Hz and stores the worst frame in each 100 ms bucket.
+- Uses 80 textures created once at load; no texture creation occurs in the sampling/redraw path.
+- Graph rendering is capped visually at 200 ms while numeric Worst remains exact.
+- Graph data continues collecting while the window or another tab is shown; redraw occurs only while Graph is visible.
+- Reset clears graph history with the other diagnostics.
+- Pause stops graph sampling and periodic redraw work.
+- Added `/perf graph` shortcut.
 
 ## Static / Automated Checks
 - Manual compatibility review against the VanillaTemplate 1.12.1/Lua 5.0.3 rules.
-- Verified current source uses 82 total `local` tokens even when counting function-body locals, comfortably below the 200-local compiler ceiling for the top-level chunk.
+- Current source contains 112 `local` tokens in total even with function-body locals included, still comfortably below the 200-local top-level compiler ceiling as a conservative gross count.
 - Verified addon texture paths contain Lua-safe doubled backslashes in source.
-- Verified 0.2 uses a separate always-active driver frame, native `gcinfo()`, all four agreed hitch thresholds, fixed-slot hitch history, and preserved visibility SavedVariable behavior.
+- Verified 0.2.3 keeps the always-active driver frame, native `gcinfo()`, all four hitch thresholds and visibility SavedVariable behavior.
+- Verified all graph textures are created before the driver `OnUpdate` path, the history uses a fixed ring buffer, sampling is 10 Hz, rendering is 5 Hz, old timestamp history code is removed, and Pause gates graph redraw.
 - Canonical `tools/lua50/check_lua50.sh` compiler check not run in this chat because the GitHub connector does not provide the private template checkout as an executable filesystem tree.
 
 ## Current Issues
-- None known in the tested 0.1.1-dev baseline.
 - No known runtime issues in the tested 0.2.1-dev baseline.
+- 0.2.3-dev Graph-tab delta is implemented and statically reviewed but not yet user-tested.
 
 ## Testing
 
@@ -89,16 +105,20 @@
 - Version/commit: `0.2.1-dev` / `3727265ccc03a638b47be91bc41223df5ff4a358`.
 - Passed: Comms and Frametime tabs, current/worst frametime, hitch counters/history, Lua memory display, Reset/Pause, hidden-window diagnostics and open/closed persistence all appeared to work.
 - Failed: None reported.
-- Not tested: Upcoming Graph-tab runtime delta.
+- Not tested: 0.2.3-dev Graph-tab delta.
 
 ### Next Runtime Test
-- Test the forthcoming Graph tab for layout, scrolling behavior, hitch visibility, Reset/Pause interaction, hidden-window collection and regression of the tested Comms/Frametime views.
+1. Load `0.2.3-dev` and confirm Comms / Frametime / Graph tabs fit cleanly in the existing window with no Lua errors.
+2. Open Graph and confirm bars scroll left-to-right over roughly eight seconds with newest data at `now`.
+3. Confirm obvious hitches produce visible spikes and the 33/50/100/200 ms guide lines are readable.
+4. Confirm Frametime still shows Current, Worst, Lua memory and cumulative hitch counters, with the old timestamp list gone.
+5. Press Reset and confirm graph history clears together with the numeric diagnostics.
+6. Press Pause on Graph and confirm the graph freezes; Resume should continue without an artificial large spike.
+7. Hide Performante for several seconds, reopen with `/perf graph`, and confirm history continued collecting while hidden.
+8. Recheck Comms counting, open/closed persistence and the existing `/perf frame` shortcut.
 
 ## Planned / Next Work
-- Add a third Graph tab without enlarging the existing window.
-- Keep roughly 80 fixed numeric samples at 10 Hz (~8 seconds).
-- Store the worst frame seen in each 100 ms bucket so brief hitches remain visible.
-- Pre-create/reuse graph textures; do not allocate UI objects while sampling.
+- Runtime-test `0.2.3-dev` and correct only issues found in that graph/UI test.
 - Keep event correlation as a separate later scope.
 
 ## Deferred / Out of Scope
@@ -114,4 +134,4 @@
 - External/runtime prerequisites: None beyond a Vanilla WoW 1.12.1-compatible client.
 
 ## Exact Next Step
-Implement the Graph-tab runtime delta on top of tested `0.2.1-dev`, keeping the existing 330x286 window footprint and event capture deferred.
+Runtime-test `0.2.3-dev` commit `b051fa642c35a49e809600903b96d0e4984d5b45` using the numbered Graph-tab checks above; keep event capture deferred.
