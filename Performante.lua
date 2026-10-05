@@ -663,17 +663,17 @@ driver:SetScript("OnUpdate", function()
 
         if monitoringReady and not paused then
             currentMemoryKb = gcinfo()
-        end
 
-        if Performante:IsShown() and currentView ~= "graph" then
-            Refresh()
+            if Performante:IsShown() and currentView ~= "graph" then
+                Refresh()
+            end
         end
     end
 
     if graphRedrawElapsed >= GRAPH_REDRAW_INTERVAL then
         graphRedrawElapsed = 0
 
-        if Performante:IsShown() and currentView == "graph" then
+        if monitoringReady and not paused and Performante:IsShown() and currentView == "graph" then
             Refresh()
         end
     end
