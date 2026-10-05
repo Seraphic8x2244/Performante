@@ -1,6 +1,6 @@
 -- Performante
 -- Vanilla WoW 1.12.1 / Lua 5.0.3
--- 0.2.0: communications, frametime/hitch and Lua-memory diagnostics.
+-- 0.2.2: communications, frametime/hitch, Lua-memory and graph diagnostics.
 
 local ADDON_NAME = "Performante"
 local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version")
@@ -18,6 +18,7 @@ local paused = false
 local currentView = "comms"
 local monitoringReady = false
 local uiElapsed = 0
+local graphRedrawElapsed = 0
 
 local currentFrameMs = 0
 local worstFrameMs = 0
@@ -25,19 +26,37 @@ local hitch33 = 0
 local hitch50 = 0
 local hitch100 = 0
 local hitch200 = 0
-local hitchTimes = {}
-local hitchValues = {}
-local hitchLogCount = 0
-local HITCH_LOG_LIMIT = 4
-local HITCH_LOG_THRESHOLD = 50
 
 local currentMemoryKb = 0
 local memoryBaselineKb = 0
 
 local MAX_ROWS = 11
 
+local GRAPH_SAMPLE_COUNT = 80
+local GRAPH_SAMPLE_INTERVAL = 0.10
+local GRAPH_REDRAW_INTERVAL = 0.20
+local GRAPH_MAX_MS = 200
+local GRAPH_HEIGHT = 150
+local GRAPH_BASE_Y = -235
+local GRAPH_BAR_START_X = 54
+local GRAPH_BAR_STEP = 3
+local GRAPH_BAR_WIDTH = 2
+
+local graphSamples = {}
+local graphWriteIndex = 0
+local graphSampleCount = 0
+local graphSampleElapsed = 0
+local graphBucketWorstMs = 0
+
 local commsWidgets = {}
 local frameWidgets = {}
+local graphWidgets = {}
+local graphBars = {}
+
+local i
+for i = 1, GRAPH_SAMPLE_COUNT do
+    graphSamples[i] = 0
+end
 
 local function AddWidget(group, widget)
     table.insert(group, widget)
@@ -82,12 +101,6 @@ local function FormatMemory(kb)
     return string.format("%.0f KB", kb)
 end
 
-local function FormatSessionTime(seconds)
-    local minutes = math.floor(seconds / 60)
-    local wholeSeconds = math.floor(seconds - (minutes * 60))
-    return string.format("%02d:%02d", minutes, wholeSeconds)
-end
-
 local function FormatMemoryDelta(kb)
     local sign = ""
 
@@ -102,14 +115,25 @@ local function FormatMemoryDelta(kb)
 end
 
 local function ShowGroup(group, shown)
-    local i
-    for i = 1, table.getn(group) do
+    local index
+    for index = 1, table.getn(group) do
         if shown then
-            group[i]:Show()
+            group[index]:Show()
         else
-            group[i]:Hide()
+            group[index]:Hide()
         end
     end
+end
+
+local function GraphY(ms)
+    local clamped = ms
+    if clamped < 0 then
+        clamped = 0
+    elseif clamped > GRAPH_MAX_MS then
+        clamped = GRAPH_MAX_MS
+    end
+
+    return GRAPH_BASE_Y + ((clamped / GRAPH_MAX_MS) * GRAPH_HEIGHT)
 end
 
 Performante:SetWidth(330)
@@ -145,20 +169,26 @@ local closeButton = CreateFrame("Button", nil, Performante, "UIPanelCloseButton"
 closeButton:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -2, -2)
 
 local commsTab = CreateFrame("Button", nil, Performante, "UIPanelButtonTemplate")
-commsTab:SetWidth(76)
+commsTab:SetWidth(66)
 commsTab:SetHeight(20)
 commsTab:SetPoint("TOPLEFT", Performante, "TOPLEFT", 12, -30)
 commsTab:SetText(L.COMMS)
 
 local frameTab = CreateFrame("Button", nil, Performante, "UIPanelButtonTemplate")
-frameTab:SetWidth(88)
+frameTab:SetWidth(82)
 frameTab:SetHeight(20)
-frameTab:SetPoint("LEFT", commsTab, "RIGHT", 6, 0)
+frameTab:SetPoint("LEFT", commsTab, "RIGHT", 4, 0)
 frameTab:SetText(L.FRAMETIME)
+
+local graphTab = CreateFrame("Button", nil, Performante, "UIPanelButtonTemplate")
+graphTab:SetWidth(62)
+graphTab:SetHeight(20)
+graphTab:SetPoint("LEFT", frameTab, "RIGHT", 4, 0)
+graphTab:SetText(L.GRAPH)
 
 local pauseState = Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 pauseState:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -14, -34)
-pauseState:SetWidth(100)
+pauseState:SetWidth(72)
 pauseState:SetJustifyH("RIGHT")
 pauseState:SetText("")
 
@@ -187,7 +217,6 @@ commsDivider:SetPoint("TOPLEFT", Performante, "TOPLEFT", 12, -80)
 commsDivider:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -12, -80)
 
 local rows = {}
-local i
 for i = 1, MAX_ROWS do
     local row = {}
 
@@ -211,64 +240,104 @@ overflow:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -250)
 overflow:SetText("")
 
 local currentLabel = AddWidget(frameWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlight"))
-currentLabel:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -68)
+currentLabel:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -70)
 currentLabel:SetWidth(145)
 currentLabel:SetJustifyH("LEFT")
 
 local worstLabel = AddWidget(frameWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlight"))
-worstLabel:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -14, -68)
+worstLabel:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -14, -70)
 worstLabel:SetWidth(145)
 worstLabel:SetJustifyH("RIGHT")
 
 local memoryLabel = AddWidget(frameWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
-memoryLabel:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -91)
+memoryLabel:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -96)
 memoryLabel:SetWidth(302)
 memoryLabel:SetJustifyH("LEFT")
 
 local hitchTitle = AddWidget(frameWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
-hitchTitle:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -116)
+hitchTitle:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -128)
 hitchTitle:SetText(L.HITCHES)
 
 local hitch33Label = AddWidget(frameWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
-hitch33Label:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -136)
+hitch33Label:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -150)
 hitch33Label:SetWidth(140)
 hitch33Label:SetJustifyH("LEFT")
 
 local hitch50Label = AddWidget(frameWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
-hitch50Label:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -14, -136)
+hitch50Label:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -14, -150)
 hitch50Label:SetWidth(140)
 hitch50Label:SetJustifyH("RIGHT")
 
 local hitch100Label = AddWidget(frameWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
-hitch100Label:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -154)
+hitch100Label:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -174)
 hitch100Label:SetWidth(140)
 hitch100Label:SetJustifyH("LEFT")
 
 local hitch200Label = AddWidget(frameWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
-hitch200Label:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -14, -154)
+hitch200Label:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -14, -174)
 hitch200Label:SetWidth(140)
 hitch200Label:SetJustifyH("RIGHT")
 
-local frameDivider = AddWidget(frameWidgets, Performante:CreateTexture(nil, "ARTWORK"))
-frameDivider:SetTexture(1, 1, 1)
-frameDivider:SetAlpha(0.16)
-frameDivider:SetHeight(1)
-frameDivider:SetPoint("TOPLEFT", Performante, "TOPLEFT", 12, -174)
-frameDivider:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -12, -174)
+local frameNote = AddWidget(frameWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+frameNote:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -211)
+frameNote:SetWidth(302)
+frameNote:SetJustifyH("LEFT")
+frameNote:SetText(L.GRAPH_HINT)
 
-local recentTitle = AddWidget(frameWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
-recentTitle:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -184)
-recentTitle:SetText(L.RECENT_HITCHES)
+local graphNote = AddWidget(graphWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+graphNote:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -66)
+graphNote:SetWidth(302)
+graphNote:SetJustifyH("LEFT")
+graphNote:SetText(L.GRAPH_NOTE)
 
-local hitchRows = {}
-for i = 1, HITCH_LOG_LIMIT do
-    local hitchRow = AddWidget(frameWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
-    hitchRow:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -202 - ((i - 1) * 14))
-    hitchRow:SetWidth(302)
-    hitchRow:SetJustifyH("LEFT")
-    hitchRow:SetText("")
-    hitchRows[i] = hitchRow
+local graphGuideValues = { 200, 100, 50, 33 }
+for i = 1, table.getn(graphGuideValues) do
+    local guideValue = graphGuideValues[i]
+
+    local guide = AddWidget(graphWidgets, Performante:CreateTexture(nil, "BACKGROUND"))
+    guide:SetTexture(1, 1, 1)
+    guide:SetAlpha(guideValue == 200 and 0.18 or 0.12)
+    guide:SetHeight(1)
+    guide:SetPoint("TOPLEFT", Performante, "TOPLEFT", 48, GraphY(guideValue))
+    guide:SetWidth(258)
+
+    local guideLabel = AddWidget(graphWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+    guideLabel:SetPoint("RIGHT", guide, "LEFT", -4, 0)
+    guideLabel:SetWidth(30)
+    guideLabel:SetJustifyH("RIGHT")
+    guideLabel:SetText(guideValue)
 end
+
+local graphBase = AddWidget(graphWidgets, Performante:CreateTexture(nil, "BACKGROUND"))
+graphBase:SetTexture(1, 1, 1)
+graphBase:SetAlpha(0.18)
+graphBase:SetHeight(1)
+graphBase:SetPoint("TOPLEFT", Performante, "TOPLEFT", 48, GRAPH_BASE_Y)
+graphBase:SetWidth(258)
+
+local graphZeroLabel = AddWidget(graphWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+graphZeroLabel:SetPoint("RIGHT", graphBase, "LEFT", -4, 0)
+graphZeroLabel:SetWidth(30)
+graphZeroLabel:SetJustifyH("RIGHT")
+graphZeroLabel:SetText("0")
+
+for i = 1, GRAPH_SAMPLE_COUNT do
+    local bar = AddWidget(graphWidgets, Performante:CreateTexture(nil, "ARTWORK"))
+    bar:SetTexture(1, 1, 1)
+    bar:SetAlpha(0.75)
+    bar:SetWidth(GRAPH_BAR_WIDTH)
+    bar:SetHeight(1)
+    bar:SetPoint("BOTTOMLEFT", Performante, "TOPLEFT", GRAPH_BAR_START_X + ((i - 1) * GRAPH_BAR_STEP), GRAPH_BASE_Y)
+    graphBars[i] = bar
+end
+
+local graphOldLabel = AddWidget(graphWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+graphOldLabel:SetPoint("TOPLEFT", Performante, "TOPLEFT", 48, -241)
+graphOldLabel:SetText("-8s")
+
+local graphNowLabel = AddWidget(graphWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+graphNowLabel:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -24, -241)
+graphNowLabel:SetText(L.NOW)
 
 local resetButton = CreateFrame("Button", nil, Performante, "UIPanelButtonTemplate")
 resetButton:SetWidth(72)
@@ -337,16 +406,41 @@ local function RefreshFrametime()
     hitch50Label:SetText("> 50 ms: " .. hitch50)
     hitch100Label:SetText("> 100 ms: " .. hitch100)
     hitch200Label:SetText("> 200 ms: " .. hitch200)
+end
 
+local function GetGraphSample(displayIndex)
+    local emptySlots = GRAPH_SAMPLE_COUNT - graphSampleCount
+    if displayIndex <= emptySlots then
+        return 0
+    end
+
+    local historyIndex = displayIndex - emptySlots
+    local sourceIndex = graphWriteIndex - graphSampleCount + historyIndex
+
+    while sourceIndex <= 0 do
+        sourceIndex = sourceIndex + GRAPH_SAMPLE_COUNT
+    end
+
+    while sourceIndex > GRAPH_SAMPLE_COUNT do
+        sourceIndex = sourceIndex - GRAPH_SAMPLE_COUNT
+    end
+
+    return graphSamples[sourceIndex] or 0
+end
+
+local function DrawGraph()
     local index
-    for index = 1, HITCH_LOG_LIMIT do
-        if index <= hitchLogCount then
-            hitchRows[index]:SetText(FormatSessionTime(hitchTimes[index]) .. "   " .. string.format("%.1f ms", hitchValues[index]))
-        elseif index == 1 then
-            hitchRows[index]:SetText(L.NO_HITCHES)
-        else
-            hitchRows[index]:SetText("")
+    for index = 1, GRAPH_SAMPLE_COUNT do
+        local sampleMs = GetGraphSample(index)
+        local height = (sampleMs / GRAPH_MAX_MS) * GRAPH_HEIGHT
+
+        if height < 1 then
+            height = 1
+        elseif height > GRAPH_HEIGHT then
+            height = GRAPH_HEIGHT
         end
+
+        graphBars[index]:SetHeight(height)
     end
 end
 
@@ -359,27 +453,52 @@ local function Refresh()
 
     if currentView == "comms" then
         RefreshComms()
-    else
+    elseif currentView == "frametime" then
         RefreshFrametime()
+    else
+        DrawGraph()
     end
 end
 
 local function SetView(view)
     currentView = view
 
+    ShowGroup(commsWidgets, currentView == "comms")
+    ShowGroup(frameWidgets, currentView == "frametime")
+    ShowGroup(graphWidgets, currentView == "graph")
+
     if currentView == "comms" then
-        ShowGroup(commsWidgets, true)
-        ShowGroup(frameWidgets, false)
         commsTab:Disable()
-        frameTab:Enable()
     else
-        ShowGroup(commsWidgets, false)
-        ShowGroup(frameWidgets, true)
         commsTab:Enable()
+    end
+
+    if currentView == "frametime" then
         frameTab:Disable()
+    else
+        frameTab:Enable()
+    end
+
+    if currentView == "graph" then
+        graphTab:Disable()
+    else
+        graphTab:Enable()
     end
 
     Refresh()
+end
+
+local function ResetGraph()
+    local index
+    for index = 1, GRAPH_SAMPLE_COUNT do
+        graphSamples[index] = 0
+    end
+
+    graphWriteIndex = 0
+    graphSampleCount = 0
+    graphSampleElapsed = 0
+    graphBucketWorstMs = 0
+    graphRedrawElapsed = 0
 end
 
 local function ResetAll()
@@ -394,28 +513,58 @@ local function ResetAll()
     hitch50 = 0
     hitch100 = 0
     hitch200 = 0
-    hitchLogCount = 0
 
     currentMemoryKb = gcinfo()
     memoryBaselineKb = currentMemoryKb
     uiElapsed = 0
 
+    ResetGraph()
     Refresh()
 end
 
-local function AddHitch(frameMs)
-    local index
-    for index = HITCH_LOG_LIMIT, 2, -1 do
-        hitchTimes[index] = hitchTimes[index - 1]
-        hitchValues[index] = hitchValues[index - 1]
+local function PushGraphSample(frameMs)
+    graphWriteIndex = graphWriteIndex + 1
+    if graphWriteIndex > GRAPH_SAMPLE_COUNT then
+        graphWriteIndex = 1
     end
 
-    hitchTimes[1] = GetTime()
-    hitchValues[1] = frameMs
+    graphSamples[graphWriteIndex] = frameMs
 
-    if hitchLogCount < HITCH_LOG_LIMIT then
-        hitchLogCount = hitchLogCount + 1
+    if graphSampleCount < GRAPH_SAMPLE_COUNT then
+        graphSampleCount = graphSampleCount + 1
     end
+end
+
+local function AdvanceGraph(elapsed, frameMs)
+    local slots
+    local slot
+
+    if frameMs > graphBucketWorstMs then
+        graphBucketWorstMs = frameMs
+    end
+
+    graphSampleElapsed = graphSampleElapsed + elapsed
+    if graphSampleElapsed < GRAPH_SAMPLE_INTERVAL then
+        return
+    end
+
+    slots = math.floor(graphSampleElapsed / GRAPH_SAMPLE_INTERVAL)
+    if slots > GRAPH_SAMPLE_COUNT then
+        slots = GRAPH_SAMPLE_COUNT
+    end
+
+    PushGraphSample(graphBucketWorstMs)
+
+    for slot = 2, slots do
+        PushGraphSample(0)
+    end
+
+    graphSampleElapsed = graphSampleElapsed - (slots * GRAPH_SAMPLE_INTERVAL)
+    if graphSampleElapsed >= GRAPH_SAMPLE_INTERVAL then
+        graphSampleElapsed = 0
+    end
+
+    graphBucketWorstMs = 0
 end
 
 closeButton:SetScript("OnClick", function()
@@ -428,6 +577,10 @@ end)
 
 frameTab:SetScript("OnClick", function()
     SetView("frametime")
+end)
+
+graphTab:SetScript("OnClick", function()
+    SetView("graph")
 end)
 
 resetButton:SetScript("OnClick", function()
@@ -499,12 +652,12 @@ driver:SetScript("OnUpdate", function()
             hitch200 = hitch200 + 1
         end
 
-        if currentFrameMs > HITCH_LOG_THRESHOLD then
-            AddHitch(currentFrameMs)
-        end
+        AdvanceGraph(elapsed, currentFrameMs)
     end
 
     uiElapsed = uiElapsed + elapsed
+    graphRedrawElapsed = graphRedrawElapsed + elapsed
+
     if uiElapsed >= 0.5 then
         uiElapsed = 0
 
@@ -512,7 +665,15 @@ driver:SetScript("OnUpdate", function()
             currentMemoryKb = gcinfo()
         end
 
-        if Performante:IsShown() then
+        if Performante:IsShown() and currentView ~= "graph" then
+            Refresh()
+        end
+    end
+
+    if graphRedrawElapsed >= GRAPH_REDRAW_INTERVAL then
+        graphRedrawElapsed = 0
+
+        if Performante:IsShown() and currentView == "graph" then
             Refresh()
         end
     end
@@ -540,6 +701,9 @@ SlashCmdList["PERFORMANTE"] = function(msg)
     elseif command == "frametime" or command == "frame" then
         SetWindowShown(true)
         SetView("frametime")
+    elseif command == "graph" then
+        SetWindowShown(true)
+        SetView("graph")
     elseif command == "show" then
         SetWindowShown(true)
     elseif command == "hide" then

@@ -3,6 +3,7 @@ Performante_L = {
     PAUSED = "PAUSED",
     COMMS = "Comms",
     FRAMETIME = "Frametime",
+    GRAPH = "Graph",
     PREFIX = "Prefix",
     MESSAGES = "Messages",
     MORE_PREFIXES = "more prefixes",
@@ -13,6 +14,7 @@ Performante_L = {
     WORST = "Worst",
     MEMORY = "Lua memory",
     HITCHES = "Hitches since reset",
-    RECENT_HITCHES = "Recent hitches (> 50 ms)",
-    NO_HITCHES = "No > 50 ms hitches yet"
+    GRAPH_HINT = "Graph shows the rolling frametime history.",
+    GRAPH_NOTE = "8 sec history - worst frame per 100 ms bucket",
+    NOW = "now"
 }
