@@ -1,6 +1,7 @@
 -- Performante
 -- Vanilla WoW 1.12.1 / Lua 5.0.3
 -- 0.1 baseline: live CHAT_MSG_ADDON counter by communication prefix.
+-- 0.1.1: persist window visibility with SavedVariables.
 
 local ADDON_NAME = "Performante"
 local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version")
@@ -14,6 +15,37 @@ local paused = false
 local dirty = true
 local updateElapsed = 0
 local MAX_ROWS = 12
+local variablesLoaded = false
+
+local function SetWindowShown(shown)
+    if not PerformanteDB then
+        PerformanteDB = {}
+    end
+
+    PerformanteDB.shown = shown and 1 or nil
+
+    if shown then
+        Performante:Show()
+    else
+        Performante:Hide()
+    end
+end
+
+local function RestoreWindowVisibility()
+    if not PerformanteDB then
+        PerformanteDB = {}
+    end
+
+    if PerformanteDB.shown == nil and not variablesLoaded then
+        PerformanteDB.shown = 1
+    end
+
+    if PerformanteDB.shown then
+        Performante:Show()
+    else
+        Performante:Hide()
+    end
+end
 
 Performante:SetWidth(330)
 Performante:SetHeight(286)
@@ -51,7 +83,7 @@ status:SetText(L.TOTAL .. ": 0")
 local closeButton = CreateFrame("Button", nil, Performante, "UIPanelCloseButton")
 closeButton:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -2, -2)
 closeButton:SetScript("OnClick", function()
-    Performante:Hide()
+    SetWindowShown(false)
 end)
 
 local prefixHeader = Performante:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -109,7 +141,8 @@ local function BuildSortedList()
     end)
 end
 
-local function Refresh()
+local function Performante:Hide()
+Refresh()
     if not dirty then
         return
     end
@@ -177,8 +210,21 @@ pauseButton:SetScript("OnClick", function()
 end)
 
 Performante:RegisterEvent("CHAT_MSG_ADDON")
+Performante:RegisterEvent("VARIABLES_LOADED")
 Performante:SetScript("OnEvent", function()
-    if event == "CHAT_MSG_ADDON" then
+    if event == "VARIABLES_LOADED" then
+        variablesLoaded = true
+
+        if not PerformanteDB then
+            PerformanteDB = {}
+        end
+
+        if PerformanteDB.shown == nil then
+            PerformanteDB.shown = 1
+        end
+
+        RestoreWindowVisibility()
+    elseif event == "CHAT_MSG_ADDON" then
         if paused then
             return
         end
@@ -214,7 +260,7 @@ SlashCmdList["PERFORMANTE"] = function(msg)
 
     if command == "reset" then
         ResetCounts()
-        Performante:Show()
+        SetWindowShown(true)
     elseif command == "pause" then
         paused = true
         pauseButton:SetText(L.RESUME)
@@ -226,14 +272,14 @@ SlashCmdList["PERFORMANTE"] = function(msg)
         dirty = true
         Refresh()
     elseif command == "show" then
-        Performante:Show()
+        SetWindowShown(true)
     elseif command == "hide" then
-        Performante:Hide()
+        SetWindowShown(false)
     else
         if Performante:IsShown() then
-            Performante:Hide()
+            SetWindowShown(false)
         else
-            Performante:Show()
+            SetWindowShown(true)
         end
     end
 end
