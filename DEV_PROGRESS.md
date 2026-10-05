@@ -3,7 +3,7 @@
 ## Current
 - Branch: `dev`
 - Version: `0.1.0-dev`
-- Development head: Initial Performante baseline setup commit.
+- Development head: `c06d6b71f2296d92a8ecbcba1f13f977841551cc` — initial Performante baseline setup commit.
 - Stable baseline: None; `main` currently contains only the repository README.
 - Goal: Establish the Performante 0.1 development baseline from the accepted AddonCommsMonitor layout and communication counter.
 - Current scope boundary: Repository/template adoption plus the 0.1 communication monitor only. Do not implement 0.2 performance diagnostics until scope is discussed and agreed.
@@ -35,7 +35,7 @@
 
 ## Recent Relevant Commits
 - Repository `main`: `bbe641fb6237fb740e338af766cca286f5c9e7f7` — initial repository commit.
-- `dev`: initial template-aligned Performante baseline setup commit.
+- `dev`: `c06d6b71f2296d92a8ecbcba1f13f977841551cc` — initial template-aligned Performante baseline setup commit.
 
 ## Completed / User-Verified
 - The precursor AddonCommsMonitor 0.1.0 was used by the user and its compact live layout was accepted.
