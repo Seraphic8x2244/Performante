@@ -6,7 +6,7 @@
 - Development/runtime head: `3727265ccc03a638b47be91bc41223df5ff4a358` — current 0.2.1-dev runtime build.
 - Latest tested baseline before 0.2: `bcd1e20784f9c230f5134e2ba589c5037c6d4c45` (`0.1.1-dev`).
 - Stable baseline: None; `main` currently contains only the repository README.
-- Goal: Runtime-test the implemented Performante 0.2 diagnostics on top of the tested 0.1.1 baseline.
+- Goal: Extend the now-tested 0.2.1 diagnostics with a compact live frametime graph while preserving the current Comms/Frametime layout.
 - Current scope boundary: 0.2 adds lightweight frametime/hitch and Lua-memory diagnostics alongside Comms. Full event-storm capture/correlation is deferred.
 
 ## Current Design / Development Contract
@@ -59,23 +59,18 @@
 - Two superseded intermediate visibility-edit commits exist immediately before `bcd1e207`; the clean runtime commit rebuilds from the known-good 0.1 baseline.
 - `dev`: `ec71a8bac0eed7bc8c663592cc110cf4ea08f8f8` — recorded the tested 0.1.1 baseline before 0.2 work.
 - `dev`: `8d04c2989839b44db7a98f908ddfb801196bbd13` — initial 0.2.0-dev implementation; superseded before runtime testing.
-- `dev`: `3727265ccc03a638b47be91bc41223df5ff4a358` — 0.2.1-dev; fixes Vanilla-safe backdrop escaping and removes per-hitch table allocation. This is the build to test.
+- `dev`: `3727265ccc03a638b47be91bc41223df5ff4a358` — 0.2.1-dev; fixes Vanilla-safe backdrop escaping and removes per-hitch table allocation. User-tested and accepted.
 
 ## Completed / User-Verified
 - The precursor AddonCommsMonitor 0.1.0 was used by the user and its compact live layout was accepted.
 - The 0.2 feature plan above has been accepted by the user.
 - Performante 0.1.0-dev at `c06d6b71f2296d92a8ecbcba1f13f977841551cc` was user-tested after the rename/repackage and reported working.
 - Performante 0.1.1-dev at `bcd1e20784f9c230f5134e2ba589c5037c6d4c45` was user-tested: visibility persistence worked across reload and the existing monitor remained functional.
+- Performante 0.2.1-dev at `3727265ccc03a638b47be91bc41223df5ff4a358` was user-tested: Comms, Frametime, hitch counters/history, memory display, Reset/Pause, hidden-window collection and open/closed persistence all appeared to work.
 
 ## Implemented / Awaiting Runtime Test
-- 0.2.1-dev preserves the tested Comms monitor and visibility persistence.
-- Added Comms / Frametime tabs in the same compact draggable window.
-- Frametime view shows current frame time, worst frame since reset, cumulative >33/>50/>100/>200 ms counts, and four recent >50 ms hitches.
-- Lua memory view shows current `gcinfo()` usage and delta from the last reset.
-- Reset clears comm counts, frametime/hitch data and establishes a fresh memory baseline.
-- Pause globally stops communication counting, frametime/hitch updates and memory sampling.
-- Diagnostics continue while the visible window is hidden; only the UI refresh is skipped when hidden.
-- Added `/perf comms`, `/perf frame` and `/perf frametime` shortcuts in addition to existing commands.
+- None for the tested 0.2.1 baseline.
+- Next runtime delta: a dedicated Graph tab with an approximately 8-second rolling frametime visualization, sampled at 10 Hz using the worst frame in each 100 ms bucket.
 
 ## Static / Automated Checks
 - Manual compatibility review against the VanillaTemplate 1.12.1/Lua 5.0.3 rules.
@@ -86,29 +81,24 @@
 
 ## Current Issues
 - None known in the tested 0.1.1-dev baseline.
-- 0.2.1-dev is implemented and statically reviewed but has not yet been exercised in the target client.
+- No known runtime issues in the tested 0.2.1-dev baseline.
 
 ## Testing
 
 ### Last Runtime Test
-- Version/commit: `0.1.1-dev` / `bcd1e20784f9c230f5134e2ba589c5037c6d4c45`.
-- Passed: Open/closed state persisted across `/reload`; existing comms monitor functionality remained working.
+- Version/commit: `0.2.1-dev` / `3727265ccc03a638b47be91bc41223df5ff4a358`.
+- Passed: Comms and Frametime tabs, current/worst frametime, hitch counters/history, Lua memory display, Reset/Pause, hidden-window diagnostics and open/closed persistence all appeared to work.
 - Failed: None reported.
-- Not tested: Current 0.2.1-dev runtime delta.
+- Not tested: Upcoming Graph-tab runtime delta.
 
 ### Next Runtime Test
-1. Load `0.2.1-dev` and confirm no Lua error and both Comms / Frametime tabs render correctly.
-2. Confirm Comms still counts and sorts addon-message prefixes as before.
-3. On Frametime, confirm Current updates, Worst only rises until Reset, and memory shows a current value plus signed change.
-4. During normal play, confirm >33/>50/>100/>200 ms counters rise plausibly and recent >50 ms entries appear when hitches occur.
-5. Press Reset and confirm Comms, hitch counters/history and Worst clear while the memory delta returns near zero.
-6. Press Pause and confirm comms, frametime/hitches and memory stop changing; Resume should continue without a large artificial hitch.
-7. Close the window, continue playing briefly, reopen with `/perf frame`, and confirm diagnostics continued while hidden.
-8. Recheck close/open persistence across `/reload`.
+- Test the forthcoming Graph tab for layout, scrolling behavior, hitch visibility, Reset/Pause interaction, hidden-window collection and regression of the tested Comms/Frametime views.
 
 ## Planned / Next Work
-- Runtime-test `0.2.1-dev`.
-- Fix only issues found in that test before considering 0.2 accepted.
+- Add a third Graph tab without enlarging the existing window.
+- Keep roughly 80 fixed numeric samples at 10 Hz (~8 seconds).
+- Store the worst frame seen in each 100 ms bucket so brief hitches remain visible.
+- Pre-create/reuse graph textures; do not allocate UI objects while sampling.
 - Keep event correlation as a separate later scope.
 
 ## Deferred / Out of Scope
@@ -124,4 +114,4 @@
 - External/runtime prerequisites: None beyond a Vanilla WoW 1.12.1-compatible client.
 
 ## Exact Next Step
-Runtime-test `0.2.1-dev` commit `3727265ccc03a638b47be91bc41223df5ff4a358` using the numbered checks above; do not start event capture until 0.2 behavior is accepted.
+Implement the Graph-tab runtime delta on top of tested `0.2.1-dev`, keeping the existing 330x286 window footprint and event capture deferred.
