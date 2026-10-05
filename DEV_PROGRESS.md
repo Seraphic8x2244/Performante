@@ -6,7 +6,7 @@
 - Development/runtime head: `bcd1e20784f9c230f5134e2ba589c5037c6d4c45` — 0.1.1 visibility persistence built cleanly from the tested 0.1 baseline.
 - Latest status-only commit before this update: `ae9490519fa334c3127753da33b51e802f173604`.
 - Stable baseline: None; `main` currently contains only the repository README.
-- Goal: Preserve the tested 0.1 communications monitor baseline, verify 0.1.1 window-state persistence, then begin the agreed Performante 0.2 diagnostic build.
+- Goal: Build the agreed Performante 0.2 diagnostic revision on top of the now-tested 0.1.1 baseline.
 - Current scope boundary: 0.2 adds lightweight frametime/hitch and Lua-memory diagnostics alongside Comms. Full event-storm capture/correlation is deferred.
 
 ## Current Design / Development Contract
@@ -58,38 +58,31 @@
 - The precursor AddonCommsMonitor 0.1.0 was used by the user and its compact live layout was accepted.
 - The 0.2 feature plan above has been accepted by the user.
 - Performante 0.1.0-dev at `c06d6b71f2296d92a8ecbcba1f13f977841551cc` was user-tested after the rename/repackage and reported working.
+- Performante 0.1.1-dev at `bcd1e20784f9c230f5134e2ba589c5037c6d4c45` was user-tested: visibility persistence worked across reload and the existing monitor remained functional.
 
 ## Implemented / Awaiting Runtime Test
-- Performante 0.1.1-dev keeps the tested ACM-derived communications monitor behavior.
-- `PerformanteDB.shown` now remembers open/closed state across reload/login.
-- Close button and `/perf`/`/performante` show/hide paths update the persisted visibility state.
-- First run defaults to shown; pause state and counters are not persisted.
+- None for the tested 0.1.1 baseline. 0.2 implementation is the next runtime delta.
 
 ## Static / Automated Checks
 - Manual compatibility review against the VanillaTemplate 1.12.1/Lua 5.0.3 rules.
 - Canonical `tools/lua50/check_lua50.sh` compiler check not run in this chat because the GitHub connector does not provide the private template checkout as an executable filesystem tree.
 
 ## Current Issues
-- None known in the tested 0.1.0-dev baseline.
-- 0.1.1-dev visibility persistence has not yet been runtime-tested.
+- None known in the tested 0.1.1-dev baseline.
 
 ## Testing
 
 ### Last Runtime Test
-- Version/commit: `0.1.0-dev` / `c06d6b71f2296d92a8ecbcba1f13f977841551cc`.
-- Passed: Renamed/repackaged Performante baseline reported working in-game; accepted ACM-derived layout/behavior remains good.
+- Version/commit: `0.1.1-dev` / `bcd1e20784f9c230f5134e2ba589c5037c6d4c45`.
+- Passed: Open/closed state persisted across `/reload`; existing comms monitor functionality remained working.
 - Failed: None reported.
-- Not tested: 0.1.1 visibility persistence.
+- Not tested: 0.2 diagnostics, not yet implemented.
 
 ### Next Runtime Test
-1. Load/reload `0.1.1-dev` and confirm there are no Lua errors.
-2. Close the monitor, `/reload`, and confirm it remains closed.
-3. Open the monitor with `/perf`, `/reload`, and confirm it remains open.
-4. Confirm comms counting, Reset, Pause/Resume, dragging, close, `/perf`, and `/performante` still behave as before.
+- Test the forthcoming `0.2.0-dev` Comms/Frametime UI, hitch counters/history, memory display, global Reset/Pause behaviour, and visibility persistence.
 
 ## Planned / Next Work
-- Implement the agreed 0.2 scope on `dev` after 0.1.1 visibility persistence is verified.
-- Start the 0.2 runtime revision as `0.2.0-dev`.
+- Implement the agreed 0.2 scope now as `0.2.0-dev`.
 - Preserve the accepted ACM-derived layout while introducing a clear Comms/Frametime presentation.
 
 ## Deferred / Out of Scope
@@ -105,4 +98,4 @@
 - External/runtime prerequisites: None beyond a Vanilla WoW 1.12.1-compatible client.
 
 ## Exact Next Step
-Runtime-test 0.1.1-dev open/closed persistence across `/reload`; once that passes, implement the agreed 0.2 feature set as 0.2.0-dev without adding full event capture.
+Implement `0.2.0-dev`: retain Comms, add Frametime current/worst values, 33/50/100/200 ms hitch counters, a short recent hitch log, and Lua memory current/change-since-reset. Keep full event capture deferred.
