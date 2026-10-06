@@ -6,7 +6,7 @@
 - Development/runtime head: `b051fa642c35a49e809600903b96d0e4984d5b45` — current 0.2.3-dev graph runtime build.
 - Latest tested baseline: `3727265ccc03a638b47be91bc41223df5ff4a358` (`0.2.1-dev`).
 - Stable baseline: None; `main` currently contains only the repository README.
-- Goal: Runtime-test the new compact Graph tab on top of the accepted 0.2.1 diagnostics.
+- Goal: Resolve the 0.2.3 Comms test discrepancy while preserving the accepted Frametime and Graph behavior.
 - Current scope boundary: 0.2 adds lightweight frametime/hitch and Lua-memory diagnostics alongside Comms. Full event-storm capture/correlation is deferred.
 
 ## Current Design / Development Contract
@@ -97,28 +97,27 @@
 
 ## Current Issues
 - No known runtime issues in the tested 0.2.1-dev baseline.
-- 0.2.3-dev Graph-tab delta is implemented and statically reviewed but not yet user-tested.
+- 0.2.3-dev Graph tab was user-tested and described as working well; Frametime appeared unchanged/good.
+- During the same test, Comms showed no traffic despite the user expecting some. Code comparison confirms the `CHAT_MSG_ADDON` handler and Comms rendering path are unchanged from tested 0.2.1, so the next step is to distinguish missing incoming traffic from a real regression before changing runtime code.
 
 ## Testing
 
 ### Last Runtime Test
-- Version/commit: `0.2.1-dev` / `3727265ccc03a638b47be91bc41223df5ff4a358`.
-- Passed: Comms and Frametime tabs, current/worst frametime, hitch counters/history, Lua memory display, Reset/Pause, hidden-window diagnostics and open/closed persistence all appeared to work.
-- Failed: None reported.
-- Not tested: 0.2.3-dev Graph-tab delta.
+- Version/commit: `0.2.3-dev` / `b051fa642c35a49e809600903b96d0e4984d5b45`.
+- Passed: Graph visual/scrolling appeared good; Frametime appeared unchanged/good.
+- Failed / suspect: Comms showed no traffic when the user expected traffic.
+- Provenance note: the 0.2.3 Comms event/count/render code matches the previously working 0.2.1 path, so no runtime patch has been made yet.
 
 ### Next Runtime Test
-1. Load `0.2.3-dev` and confirm Comms / Frametime / Graph tabs fit cleanly in the existing window with no Lua errors.
-2. Open Graph and confirm bars scroll left-to-right over roughly eight seconds with newest data at `now`.
-3. Confirm obvious hitches produce visible spikes and the 33/50/100/200 ms guide lines are readable.
-4. Confirm Frametime still shows Current, Worst, Lua memory and cumulative hitch counters, with the old timestamp list gone.
-5. Press Reset and confirm graph history clears together with the numeric diagnostics.
-6. Press Pause on Graph and confirm the graph freezes; Resume should continue without an artificial large spike.
-7. Hide Performante for several seconds, reopen with `/perf graph`, and confirm history continued collecting while hidden.
-8. Recheck Comms counting, open/closed persistence and the existing `/perf frame` shortcut.
+1. Put the Performante client and a second 1.12.1 client in the same party.
+2. From the second client, run `/run SendAddonMessage("PERFTEST","ping","PARTY")`.
+3. On the Performante client, open Comms and confirm whether `PERFTEST` appears and increments.
+4. If `PERFTEST` appears, treat Performante Comms as working and investigate the expected source addon/traffic condition instead.
+5. If `PERFTEST` does not appear, instrument/fix the receive path before any further feature work.
 
 ## Planned / Next Work
-- Runtime-test `0.2.3-dev` and correct only issues found in that graph/UI test.
+- Run the controlled two-client incoming addon-message test above.
+- Patch Comms only if that controlled receive test fails.
 - Keep event correlation as a separate later scope.
 
 ## Deferred / Out of Scope
@@ -134,4 +133,4 @@
 - External/runtime prerequisites: None beyond a Vanilla WoW 1.12.1-compatible client.
 
 ## Exact Next Step
-Runtime-test `0.2.3-dev` commit `b051fa642c35a49e809600903b96d0e4984d5b45` using the numbered Graph-tab checks above; keep event capture deferred.
+From a second grouped 1.12.1 client, send `SendAddonMessage("PERFTEST","ping","PARTY")` and check whether `PERFTEST` appears in Performante Comms. Do not change runtime code until this isolates traffic absence versus receive-path regression.
