@@ -143,17 +143,17 @@
 ## Testing
 
 ### Last Runtime Test
-- Version/commit: `0.2.3-dev` / `b051fa642c35a49e809600903b96d0e4984d5b45`.
-- Passed: Graph visual/scrolling, Frametime behavior, and Comms receive/count/display all confirmed working in-game. Comms visibly recorded prefix `bcs` with message count 1.
+- Version/runtime commit: `0.3.0-dev` / `42d0ba7ec034958d77579ebe0884c6c02755694b` (runtime Lua), metadata/localization completed by `38f168a2c469da0d15c7c599fcb938a2bfb8c8f5`; status head `0c9771a49b6c7ebc05b4dc632c49b3e2491b2c9f`.
+- Passed (user, single client): compact columns fit; PERFTEST inbound/outbound/total counted; 20-message PARTY burst increased outbound and rate; rate decayed to zero; Pause/Resume and Reset; collection while window hidden; Frametime current/worst, hitch counters and memory; Graph scrolling/spikes and Pause/Resume.
 - Failed: None reported.
-- Not tested: No additional runtime delta after 0.2.3.
+- Not tested: Delivery to another client/recipient; Lua 5.0.3 canonical compiler check not run. Local self-receipt does not prove remote delivery.
 
 ### Next Runtime Test
-- None required for the current 0.2.3 runtime state. Bind any future runtime test to the next version/commit that changes addon behavior.
+- Optional controlled two-client delivery test for 0.3.0-dev when a second client is available; confirm receiving client sees the message. Otherwise review the provisional 0.4.0-dev design before starting any 0.4 code.
 
 ## Planned / Next Work
-- Current 0.2.3 feature set is accepted and is the stable development baseline for the next line.
-- Current runtime line: 0.3.0-dev implemented; bidirectional Comms + five-second fixed-bucket rates await user testing.
+- Accepted 0.2.3 feature set remains the inherited baseline; 0.3.0-dev has passed user single-client runtime tests.
+- Current runtime line: 0.3.0-dev single-client tested and accepted; cross-client delivery has not been tested.
 - After 0.3 is user-verified, review and refine the provisional 0.4.0-dev event/hitch-correlation skeleton before any 0.4 runtime code is written.
 
 ## Deferred / Out of Scope
@@ -165,13 +165,13 @@
 
 ## Release / Promotion Notes
 - Main-only or release-only content to preserve: current repository README.
-- Known validation debt accepted for release: None.
+- Validation debt: cross-client delivery untested, Lua 5.0.3 canonical compiler check not run; no stable release authorized.
 - External/runtime prerequisites: None beyond a Vanilla WoW 1.12.1-compatible client.
 
 ## Exact Next Step
-Runtime-test 0.3.0-dev inbound/outbound PERFTEST delivery, totals, five-second rates, Pause/Reset and hidden collection. Keep 0.4 roadmap-only.
+Review/refine proposed 0.4.0-dev event/hitch-correlation design with user. Cross-client PERFTEST delivery and Lua 5.0.3 compiler remain validation debt for 0.3; do not silently mark them passed. Keep 0.4 roadmap-only until specifically approved.
 
 ## 0.3 Implementation Status
 - Implemented native SendAddonMessage diagnostic wrapper and received CHAT_MSG_ADDON accounting, grouped by prefix, with In/Out/Total and five-second messages/sec columns in the unchanged Comms tab footprint.
 - Counts and rate buckets are session/reset scoped; Pause freezes the diagnostic clock and collection. Payloads are not stored.
-- Not yet user-tested. Lua 5.0.3 compiler check not run; connector access does not expose a runnable checkout. 0.4 remains deferred.
+- Single-client runtime checks user-tested and passed on 2026-10-07. Remote recipient delivery not tested. Lua 5.0.3 compiler check not run; connector access does not expose a runnable checkout. 0.4 remains deferred.
