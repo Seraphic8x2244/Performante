@@ -1,6 +1,6 @@
 -- Performante
 -- Vanilla WoW 1.12.1 / Lua 5.0.3
--- 0.2.2: communications, frametime/hitch, Lua-memory and graph diagnostics.
+-- 0.3.0: bidirectional communications and bounded rates alongside frametime diagnostics.
 
 local ADDON_NAME = "Performante"
 local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version")
@@ -11,12 +11,65 @@ local driver = CreateFrame("Frame", "PerformanteDriver", UIParent)
 
 local counts = {}
 local sorted = {}
-local totalMessages = 0
+local inboundMessages = 0
+local outboundMessages = 0
 local commsDirty = true
+local commsClock = 0
+local RATE_BUCKETS = 5
 
 local paused = false
 local currentView = "comms"
 local monitoringReady = false
+
+-- Five fixed one-second buckets per observed prefix, allocated only once.
+local function RecordMessage(prefix, outbound)
+    if paused or not monitoringReady then return end
+    if not prefix or prefix == "" then prefix = "<no prefix>" end
+    local entry = counts[prefix]
+    if not entry then
+        entry = { prefix = prefix, inbound = 0, outbound = 0, total = 0, buckets = {}, seconds = {} }
+        counts[prefix] = entry
+    end
+    if outbound then
+        entry.outbound = entry.outbound + 1
+        outboundMessages = outboundMessages + 1
+    else
+        entry.inbound = entry.inbound + 1
+        inboundMessages = inboundMessages + 1
+    end
+    entry.total = entry.total + 1
+    local second = math.floor(commsClock)
+    local slot = math.mod(second, RATE_BUCKETS) + 1
+    if entry.seconds[slot] ~= second then
+        entry.seconds[slot] = second
+        entry.buckets[slot] = 0
+    end
+    entry.buckets[slot] = entry.buckets[slot] + 1
+    commsDirty = true
+end
+
+local function RecentRate(entry)
+    local second = math.floor(commsClock)
+    local sum = 0
+    local j
+    for j = 1, RATE_BUCKETS do
+        local stamp = entry.seconds[j]
+        if stamp and stamp <= second and stamp > second - RATE_BUCKETS then
+            sum = sum + entry.buckets[j]
+        end
+    end
+    return sum / RATE_BUCKETS
+end
+
+local originalSendAddonMessage = SendAddonMessage
+if originalSendAddonMessage then
+    -- Native Vanilla API uses prefix, message, distribution, optional target.
+    -- Never alter the message, call order, recipient or native return values.
+    SendAddonMessage = function(prefix, message, distribution, target)
+        RecordMessage(prefix, true)
+        return originalSendAddonMessage(prefix, message, distribution, target)
+    end
+end
 local uiElapsed = 0
 local graphRedrawElapsed = 0
 
@@ -203,11 +256,14 @@ local prefixHeader = AddWidget(commsWidgets, Performante:CreateFontString(nil, "
 prefixHeader:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -65)
 prefixHeader:SetText(L.PREFIX)
 
-local countHeader = AddWidget(commsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
-countHeader:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -18, -65)
-countHeader:SetWidth(150)
-countHeader:SetJustifyH("RIGHT")
-countHeader:SetText(L.MESSAGES)
+local headerSpecs = { { L.INBOUND, -165 }, { L.OUTBOUND, -115 }, { L.TOTAL, -65 }, { L.RATE, -16 } }
+for i = 1, 4 do
+    local h = AddWidget(commsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+    h:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", headerSpecs[i][2], -65)
+    h:SetWidth(i == 4 and 56 or 42)
+    h:SetJustifyH("RIGHT")
+    h:SetText(headerSpecs[i][1])
+end
 
 local commsDivider = AddWidget(commsWidgets, Performante:CreateTexture(nil, "ARTWORK"))
 commsDivider:SetTexture(1, 1, 1)
@@ -222,15 +278,21 @@ for i = 1, MAX_ROWS do
 
     row.prefix = AddWidget(commsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
     row.prefix:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -84 - ((i - 1) * 15))
-    row.prefix:SetWidth(238)
+    row.prefix:SetWidth(108)
     row.prefix:SetJustifyH("LEFT")
     row.prefix:SetText("")
 
-    row.count = AddWidget(commsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
-    row.count:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -18, -84 - ((i - 1) * 15))
-    row.count:SetWidth(60)
-    row.count:SetJustifyH("RIGHT")
-    row.count:SetText("")
+    row.columns = {}
+    local offsets = { -165, -115, -65, -16 }
+    local j
+    for j = 1, 4 do
+        local col = AddWidget(commsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+        col:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", offsets[j], -84 - ((i - 1) * 15))
+        col:SetWidth(j == 4 and 56 or 42)
+        col:SetJustifyH("RIGHT")
+        col:SetText("")
+        row.columns[j] = col
+    end
 
     rows[i] = row
 end
@@ -358,16 +420,16 @@ local function BuildSortedList()
 
     sorted = {}
 
-    local prefix, count
-    for prefix, count in pairs(counts) do
-        table.insert(sorted, { prefix = prefix, count = count })
+    local prefix, entry
+    for prefix, entry in pairs(counts) do
+        table.insert(sorted, entry)
     end
 
     table.sort(sorted, function(a, b)
-        if a.count == b.count then
+        if a.total == b.total then
             return a.prefix < b.prefix
         end
-        return a.count > b.count
+        return a.total > b.total
     end)
 
     commsDirty = false
@@ -376,17 +438,20 @@ end
 local function RefreshComms()
     BuildSortedList()
 
-    countHeader:SetText(L.MESSAGES .. ": " .. totalMessages)
-
     local numRows = table.getn(sorted)
     local index
     for index = 1, MAX_ROWS do
         if index <= numRows then
             rows[index].prefix:SetText(sorted[index].prefix)
-            rows[index].count:SetText(tostring(sorted[index].count))
+            local entry = sorted[index]
+            rows[index].columns[1]:SetText(tostring(entry.inbound))
+            rows[index].columns[2]:SetText(tostring(entry.outbound))
+            rows[index].columns[3]:SetText(tostring(entry.total))
+            rows[index].columns[4]:SetText(string.format("%.1f", RecentRate(entry)))
         else
             rows[index].prefix:SetText("")
-            rows[index].count:SetText("")
+            local j
+            for j = 1, 4 do rows[index].columns[j]:SetText("") end
         end
     end
 
@@ -504,7 +569,9 @@ end
 local function ResetAll()
     counts = {}
     sorted = {}
-    totalMessages = 0
+    inboundMessages = 0
+    outboundMessages = 0
+    commsClock = 0
     commsDirty = true
 
     currentFrameMs = 0
@@ -609,23 +676,7 @@ driver:SetScript("OnEvent", function()
         monitoringReady = true
         Refresh()
     elseif event == "CHAT_MSG_ADDON" then
-        if paused then
-            return
-        end
-
-        local prefix = arg1
-        if not prefix or prefix == "" then
-            prefix = "<no prefix>"
-        end
-
-        if counts[prefix] then
-            counts[prefix] = counts[prefix] + 1
-        else
-            counts[prefix] = 1
-        end
-
-        totalMessages = totalMessages + 1
-        commsDirty = true
+        RecordMessage(arg1, false)
     end
 end)
 
@@ -633,6 +684,7 @@ driver:SetScript("OnUpdate", function()
     local elapsed = arg1 or 0
 
     if monitoringReady and not paused then
+        commsClock = commsClock + elapsed
         currentFrameMs = elapsed * 1000
 
         if currentFrameMs > worstFrameMs then
