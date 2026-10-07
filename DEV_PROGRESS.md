@@ -6,8 +6,8 @@
 - Development/runtime head: `b051fa642c35a49e809600903b96d0e4984d5b45` — current 0.2.3-dev graph runtime build.
 - Latest tested baseline: `3727265ccc03a638b47be91bc41223df5ff4a358` (`0.2.1-dev`).
 - Stable baseline: None; `main` currently contains only the repository README.
-- Goal: Preserve the now-user-verified 0.2.3 Comms / Frametime / Graph diagnostic build and decide the next scoped feature.
-- Current scope boundary: 0.2 adds lightweight frametime/hitch and Lua-memory diagnostics alongside Comms. Full event-storm capture/correlation is deferred.
+- Goal: Preserve the user-verified 0.2.3 baseline and implement the agreed 0.3 communications diagnostics next; 0.4 event/hitch correlation is recorded as a provisional follow-on scope.
+- Current scope boundary: the accepted runtime is still 0.2.3-dev. The next runtime line is 0.3.0-dev for bidirectional addon-comms counting and rates. 0.4.0-dev is reserved provisionally for explicit temporary event-storm/hitch correlation; do not implement 0.4 before 0.3 is accepted and the 0.4 design is reviewed.
 
 ## Current Design / Development Contract
 
@@ -54,6 +54,46 @@
 - Full event monitoring/correlation is not part of 0.2 and is deferred to a later diagnostic build because broad event capture can itself add measurable overhead.
 - Closing the visible monitor must not stop diagnostics; only Pause stops comms, frametime, graph sampling and memory sampling.
 - Pause also suppresses periodic graph/UI redraw work; button-driven state changes still refresh immediately.
+
+### Agreed 0.3.0-dev Scope — Bidirectional Comms + Rates
+- Preserve the accepted Comms / Frametime / Graph UI and the current 330x286 footprint.
+- Expand Comms from received traffic only to separate **Inbound / Outbound / Total** accounting by communication prefix.
+- Keep inbound accounting on `CHAT_MSG_ADDON` using `arg1` as the prefix.
+- Add a lightweight hook/wrapper around the native `SendAddonMessage()` path so local addon sends can be counted before dispatch.
+- The outbound hook is diagnostic only: it must preserve original arguments, return behavior and call order, and must not alter/throttle/block messages.
+- Do not inspect/store payload bodies in 0.3.
+- Do not add sender drill-down in 0.3.
+- Add a recent **messages/second** rate so active spam is obvious even when lifetime totals are large.
+- Rate calculation should use bounded fixed-window/bucket state rather than unbounded per-message history.
+- The Comms display should remain compact; prefer concise columns/labels over a new full-size tab unless the existing tab cannot remain readable.
+- Reset clears inbound/outbound totals and rate state with the other diagnostics.
+- Pause stops both inbound/outbound counting and rate updates consistently with current global Pause semantics.
+- Hidden-window collection continues as in 0.2.3.
+- Keep Performante's own overhead low and avoid per-message table allocation where practical.
+- Version target when runtime work begins: `0.3.0-dev`.
+- 0.3 acceptance requires controlled tests for both directions:
+  - receive a known `PERFTEST` message from another client and verify Inbound/Total/rate;
+  - send a known message from the local client and verify Outbound/Total/rate;
+  - confirm the hook does not break the actual addon message reaching its intended recipient.
+
+### Provisional 0.4.0-dev Skeleton — Event Storm / Hitch Correlation
+- Purpose: help answer **what was happening around a visible frametime hitch**, without pretending Vanilla can provide modern per-addon CPU attribution.
+- This scope is provisional and must be reviewed/refined in a later chat before implementation.
+- Event capture must be **explicitly armed/temporary**, never an always-on `RegisterAllEvents()` monitor.
+- Prefer a short diagnostic capture window or bounded ring-buffer session with a clear active/inactive state.
+- During capture, count event frequency/rate and retain only bounded summary/correlation data needed around hitches.
+- Correlate captured event bursts with existing frametime/hitch timing so the user can see likely temporal associations.
+- Do not claim causation from correlation alone.
+- Avoid payload-heavy logging and avoid storing arbitrary event arguments unless a later design justifies a very narrow case.
+- UI direction: likely a dedicated Events/Correlation view or an explicit capture mode; exact layout is intentionally undecided.
+- Candidate outputs for later design review:
+  - top events by count/rate during the capture;
+  - events occurring in a short window around >50/>100/>200 ms hitches;
+  - compact markers/summary tied to the existing Graph history;
+  - capture duration/state and Performante overhead safeguards.
+- Version target if/when this scope is approved after 0.3: `0.4.0-dev`.
+- Full per-addon CPU attribution remains out of scope unless the target client exposes a trustworthy native mechanism; do not infer it from event counts.
+
 
 ## Recent Relevant Commits
 - Repository `main`: `bbe641fb6237fb740e338af766cca286f5c9e7f7` — initial repository commit.
@@ -112,14 +152,14 @@
 - None required for the current 0.2.3 runtime state. Bind any future runtime test to the next version/commit that changes addon behavior.
 
 ## Planned / Next Work
-- Current 0.2.3 feature set is accepted.
-- Discuss the next scoped diagnostic feature before changing runtime code.
-- Keep full event correlation as a separate later scope unless explicitly chosen next.
+- Current 0.2.3 feature set is accepted and is the stable development baseline for the next line.
+- Next runtime line: implement the agreed 0.3.0-dev bidirectional Comms + rate scope above.
+- After 0.3 is user-verified, review and refine the provisional 0.4.0-dev event/hitch-correlation skeleton before any 0.4 runtime code is written.
 
 ## Deferred / Out of Scope
-- Full event-storm capture/correlation.
+- 0.4 event-storm/hitch correlation is roadmap-only while 0.3 is current; its exact design is intentionally deferred.
 - Any always-on `RegisterAllEvents()` design.
-- Sender/channel/payload drill-down.
+- Sender drill-down and payload storage in 0.3.
 - Persisted counters or historical sessions.
 - Per-addon CPU attribution that the native 1.12.1 client cannot provide directly.
 
@@ -129,4 +169,4 @@
 - External/runtime prerequisites: None beyond a Vanilla WoW 1.12.1-compatible client.
 
 ## Exact Next Step
-Discuss and agree the next feature scope; do not change the accepted 0.2.3 runtime until that scope is chosen.
+In a fresh development chat, read `dev_rulebook.md` and this file, verify `dev` still points at the documented handoff/status head and that runtime baseline `b051fa642c35a49e809600903b96d0e4984d5b45` remains unchanged, then begin the agreed 0.3 line by bumping `.toc` to `0.3.0-dev` and implementing bidirectional Inbound / Outbound / Total comms accounting plus bounded messages/sec rates. Do not begin 0.4 runtime work in the same step.
