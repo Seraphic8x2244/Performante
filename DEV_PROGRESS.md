@@ -2,8 +2,8 @@
 
 ## Current
 - Branch: `dev`
-- Version: `0.2.3-dev`
-- Development/runtime head: `b051fa642c35a49e809600903b96d0e4984d5b45` — current 0.2.3-dev graph runtime build.
+- Version: `0.3.0-dev`
+- Accepted runtime baseline: `b051fa642c35a49e809600903b96d0e4984d5b45` (`0.2.3-dev`). Current 0.3.0-dev implementation awaits runtime test.
 - Latest tested baseline: `3727265ccc03a638b47be91bc41223df5ff4a358` (`0.2.1-dev`).
 - Stable baseline: None; `main` currently contains only the repository README.
 - Goal: Preserve the user-verified 0.2.3 baseline and implement the agreed 0.3 communications diagnostics next; 0.4 event/hitch correlation is recorded as a provisional follow-on scope.
@@ -153,7 +153,7 @@
 
 ## Planned / Next Work
 - Current 0.2.3 feature set is accepted and is the stable development baseline for the next line.
-- Next runtime line: implement the agreed 0.3.0-dev bidirectional Comms + rate scope above.
+- Current runtime line: 0.3.0-dev implemented; bidirectional Comms + five-second fixed-bucket rates await user testing.
 - After 0.3 is user-verified, review and refine the provisional 0.4.0-dev event/hitch-correlation skeleton before any 0.4 runtime code is written.
 
 ## Deferred / Out of Scope
@@ -169,4 +169,9 @@
 - External/runtime prerequisites: None beyond a Vanilla WoW 1.12.1-compatible client.
 
 ## Exact Next Step
-In a fresh development chat, read `dev_rulebook.md` and this file, verify `dev` still points at the documented handoff/status head and that runtime baseline `b051fa642c35a49e809600903b96d0e4984d5b45` remains unchanged, then begin the agreed 0.3 line by bumping `.toc` to `0.3.0-dev` and implementing bidirectional Inbound / Outbound / Total comms accounting plus bounded messages/sec rates. Do not begin 0.4 runtime work in the same step.
+Runtime-test 0.3.0-dev inbound/outbound PERFTEST delivery, totals, five-second rates, Pause/Reset and hidden collection. Keep 0.4 roadmap-only.
+
+## 0.3 Implementation Status
+- Implemented native SendAddonMessage diagnostic wrapper and received CHAT_MSG_ADDON accounting, grouped by prefix, with In/Out/Total and five-second messages/sec columns in the unchanged Comms tab footprint.
+- Counts and rate buckets are session/reset scoped; Pause freezes the diagnostic clock and collection. Payloads are not stored.
+- Not yet user-tested. Lua 5.0.3 compiler check not run; connector access does not expose a runnable checkout. 0.4 remains deferred.
