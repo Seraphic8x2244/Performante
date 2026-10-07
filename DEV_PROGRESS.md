@@ -6,7 +6,7 @@
 - Development/runtime head: `b051fa642c35a49e809600903b96d0e4984d5b45` — current 0.2.3-dev graph runtime build.
 - Latest tested baseline: `3727265ccc03a638b47be91bc41223df5ff4a358` (`0.2.1-dev`).
 - Stable baseline: None; `main` currently contains only the repository README.
-- Goal: Resolve the 0.2.3 Comms test discrepancy while preserving the accepted Frametime and Graph behavior.
+- Goal: Preserve the now-user-verified 0.2.3 Comms / Frametime / Graph diagnostic build and decide the next scoped feature.
 - Current scope boundary: 0.2 adds lightweight frametime/hitch and Lua-memory diagnostics alongside Comms. Full event-storm capture/correlation is deferred.
 
 ## Current Design / Development Contract
@@ -98,27 +98,23 @@
 ## Current Issues
 - No known runtime issues in the tested 0.2.1-dev baseline.
 - 0.2.3-dev Graph tab was user-tested and described as working well; Frametime appeared unchanged/good.
-- During the same test, Comms showed no traffic despite the user expecting some. Code comparison confirms the `CHAT_MSG_ADDON` handler and Comms rendering path are unchanged from tested 0.2.1, so the next step is to distinguish missing incoming traffic from a real regression before changing runtime code.
+- Follow-up in-game evidence showed Comms receiving and displaying addon traffic (`bcs`, count 1), resolving the earlier no-traffic discrepancy. No Comms code change was required.
 
 ## Testing
 
 ### Last Runtime Test
 - Version/commit: `0.2.3-dev` / `b051fa642c35a49e809600903b96d0e4984d5b45`.
-- Passed: Graph visual/scrolling appeared good; Frametime appeared unchanged/good.
-- Failed / suspect: Comms showed no traffic when the user expected traffic.
-- Provenance note: the 0.2.3 Comms event/count/render code matches the previously working 0.2.1 path, so no runtime patch has been made yet.
+- Passed: Graph visual/scrolling, Frametime behavior, and Comms receive/count/display all confirmed working in-game. Comms visibly recorded prefix `bcs` with message count 1.
+- Failed: None reported.
+- Not tested: No additional runtime delta after 0.2.3.
 
 ### Next Runtime Test
-1. Put the Performante client and a second 1.12.1 client in the same party.
-2. From the second client, run `/run SendAddonMessage("PERFTEST","ping","PARTY")`.
-3. On the Performante client, open Comms and confirm whether `PERFTEST` appears and increments.
-4. If `PERFTEST` appears, treat Performante Comms as working and investigate the expected source addon/traffic condition instead.
-5. If `PERFTEST` does not appear, instrument/fix the receive path before any further feature work.
+- None required for the current 0.2.3 runtime state. Bind any future runtime test to the next version/commit that changes addon behavior.
 
 ## Planned / Next Work
-- Run the controlled two-client incoming addon-message test above.
-- Patch Comms only if that controlled receive test fails.
-- Keep event correlation as a separate later scope.
+- Current 0.2.3 feature set is accepted.
+- Discuss the next scoped diagnostic feature before changing runtime code.
+- Keep full event correlation as a separate later scope unless explicitly chosen next.
 
 ## Deferred / Out of Scope
 - Full event-storm capture/correlation.
@@ -133,4 +129,4 @@
 - External/runtime prerequisites: None beyond a Vanilla WoW 1.12.1-compatible client.
 
 ## Exact Next Step
-From a second grouped 1.12.1 client, send `SendAddonMessage("PERFTEST","ping","PARTY")` and check whether `PERFTEST` appears in Performante Comms. Do not change runtime code until this isolates traffic absence versus receive-path regression.
+Discuss and agree the next feature scope; do not change the accepted 0.2.3 runtime until that scope is chosen.
