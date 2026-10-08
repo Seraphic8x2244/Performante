@@ -4,7 +4,7 @@
 - Branch: `dev`
 - Version: `0.4.0-dev`
 - Accepted runtime baseline: `0.3.0-dev` single-client matrix passed at runtime commit `42d0ba7ec034958d77579ebe0884c6c02755694b` with metadata/localization completed by `38f168a2c469da0d15c7c599fcb938a2bfb8c8f5`; later documentation-only commits do not change that accepted runtime.
-- Latest tested baseline: `3727265ccc03a638b47be91bc41223df5ff4a358` (`0.2.1-dev`).
+- Latest tested baseline: `0.3.0-dev` single-client runtime matrix described under Last Runtime Test.
 - Stable baseline: None; `main` currently contains only the repository README.
 - Goal: Preserve the accepted 0.3.0-dev runtime and runtime-test 0.4 Phase 1 bounded temporary event capture. Phase 2 hitch correlation remains gated.
 - Current scope boundary: 0.4.0-dev contains Phase 1 capture only. Do not start Phase 2 hitch correlation or Phase 3 Events UI until the Phase 1 runtime gate passes.
@@ -179,16 +179,14 @@
 - Conservative gross `local` token count for current `Performante.lua`: 164, below the Lua 5.0.3 200-local function/chunk ceiling; this is not a compiler pass.
 - Static inspection found and fixed one pre-runtime lexical-scope defect where capture readiness initially bound to a global instead of the existing local `monitoringReady`.
 - Manual compatibility review against the VanillaTemplate 1.12.1/Lua 5.0.3 rules.
-- Current source contains 112 `local` tokens in total even with function-body locals included, still comfortably below the 200-local top-level compiler ceiling as a conservative gross count.
 - Verified addon texture paths contain Lua-safe doubled backslashes in source.
 - Verified 0.2.3 keeps the always-active driver frame, native `gcinfo()`, all four hitch thresholds and visibility SavedVariable behavior.
 - Verified all graph textures are created before the driver `OnUpdate` path, the history uses a fixed ring buffer, sampling is 10 Hz, rendering is 5 Hz, old timestamp history code is removed, and Pause gates graph redraw.
 - Canonical `tools/lua50/check_lua50.sh` compiler check not run in this chat because the GitHub connector does not provide the private template checkout as an executable filesystem tree.
 
 ## Current Issues
-- No known runtime issues in the tested 0.2.1-dev baseline.
-- 0.2.3-dev Graph tab was user-tested and described as working well; Frametime appeared unchanged/good.
-- Follow-up in-game evidence showed Comms receiving and displaying addon traffic (`bcs`, count 1), resolving the earlier no-traffic discrepancy. No Comms code change was required.
+- No known runtime issues in the accepted 0.3.0-dev single-client baseline.
+- 0.4.0-dev Phase 1 has no known static defects after the readiness-scope correction; runtime behavior is not yet user-tested.
 
 ## Testing
 
@@ -232,4 +230,4 @@ Runtime-test 0.4.0-dev Phase 1 using the seven checks above. Fix only demonstrat
 ## 0.3 Implementation Status
 - Implemented native SendAddonMessage diagnostic wrapper and received CHAT_MSG_ADDON accounting, grouped by prefix, with In/Out/Total and five-second messages/sec columns in the unchanged Comms tab footprint.
 - Counts and rate buckets are session/reset scoped; Pause freezes the diagnostic clock and collection. Payloads are not stored.
-- Single-client runtime checks user-tested and passed on 2026-10-07. Remote recipient delivery not tested. Lua 5.0.3 compiler check not run; connector access does not expose a runnable checkout. 0.4 remains deferred.
+- Single-client runtime checks user-tested and passed on 2026-10-07. Remote recipient delivery not tested. Lua 5.0.3 compiler check not run; connector access does not expose a runnable checkout. 0.4 Phase 1 is implemented and awaiting runtime test; later phases remain gated.
