@@ -2,12 +2,12 @@
 
 ## Current
 - Branch: `dev`
-- Version: `0.3.0-dev`
-- Accepted runtime baseline: `b051fa642c35a49e809600903b96d0e4984d5b45` (`0.2.3-dev`). Current 0.3.0-dev implementation awaits runtime test.
+- Version: `0.4.0-dev`
+- Accepted runtime baseline: `0.3.0-dev` single-client matrix passed at runtime commit `42d0ba7ec034958d77579ebe0884c6c02755694b` with metadata/localization completed by `38f168a2c469da0d15c7c599fcb938a2bfb8c8f5`; later documentation-only commits do not change that accepted runtime.
 - Latest tested baseline: `3727265ccc03a638b47be91bc41223df5ff4a358` (`0.2.1-dev`).
 - Stable baseline: None; `main` currently contains only the repository README.
-- Goal: Preserve the user-verified 0.2.3 baseline and implement the agreed 0.3 communications diagnostics next; 0.4 event/hitch correlation is recorded as a provisional follow-on scope.
-- Current scope boundary: the accepted runtime is still 0.2.3-dev. The next runtime line is 0.3.0-dev for bidirectional addon-comms counting and rates. 0.4.0-dev is reserved provisionally for explicit temporary event-storm/hitch correlation; do not implement 0.4 before 0.3 is accepted and the 0.4 design is reviewed.
+- Goal: Preserve the accepted 0.3.0-dev runtime and runtime-test 0.4 Phase 1 bounded temporary event capture. Phase 2 hitch correlation remains gated.
+- Current scope boundary: 0.4.0-dev contains Phase 1 capture only. Do not start Phase 2 hitch correlation or Phase 3 Events UI until the Phase 1 runtime gate passes.
 
 ## Current Design / Development Contract
 
@@ -146,7 +146,8 @@
 - `dev`: `8d04c2989839b44db7a98f908ddfb801196bbd13` — initial 0.2.0-dev implementation; superseded before runtime testing.
 - `dev`: `3727265ccc03a638b47be91bc41223df5ff4a358` — 0.2.1-dev; user-tested and accepted.
 - `dev`: `a4cef40e43df3cf2950123125a33d39b278406c9` — 0.2.2-dev initial Graph-tab implementation; superseded before runtime testing.
-- `dev`: `b051fa642c35a49e809600903b96d0e4984d5b45` — 0.2.3-dev; current Graph-tab build, additionally suppressing periodic redraw work while paused.
+- `dev`: `b051fa642c35a49e809600903b96d0e4984d5b45` — 0.2.3-dev; Graph-tab build, additionally suppressing periodic redraw work while paused.
+- `dev`: `855bc182b94a719ef8e893a17af35f29aed9b4e6` — 0.4.0-dev Phase 1 runtime implementation complete after lexical-scope correction and version bump; awaiting runtime test.
 
 ## Completed / User-Verified
 - The precursor AddonCommsMonitor 0.1.0 was used by the user and its compact live layout was accepted.
@@ -156,6 +157,12 @@
 - Performante 0.2.1-dev at `3727265ccc03a638b47be91bc41223df5ff4a358` was user-tested: Comms, Frametime, hitch counters/history, memory display, Reset/Pause, hidden-window collection and open/closed persistence all appeared to work.
 
 ## Implemented / Awaiting Runtime Test
+- 0.4.0-dev Phase 1 adds an explicit temporary capture engine controlled by `/perf capture start`, `/perf capture stop` and `/perf capture status`; no Events UI was added.
+- Capture registers a fixed selected set of 42 high-activity Vanilla events only while active and unregisters all of them on Stop.
+- Capture data is bounded: ten preallocated 0.5-second buckets per selected event, overall counts, recent five-second rates and capture duration. No event payloads/arguments or per-occurrence log are stored.
+- A 30-second hard safety limit automatically stops capture to bound instrumentation overhead.
+- Pause freezes capture counting and duration while preserving the armed state; Resume continues it. Reset clears capture summaries/duration consistently with the other diagnostics.
+- Status output reports active/stopped state, duration, total events and the top five events by count/rate through chat only; this is a Phase 1 test/diagnostic surface, not the deferred Phase 3 Events UI.
 - Added a third Graph tab without increasing the 330x286 window size.
 - Removed the old textual recent-hitch timestamp list from Frametime; cumulative hitch counters remain.
 - Graph shows ~8 seconds from `-8s` to `now`, with 33/50/100/200 ms guide lines.
@@ -168,6 +175,9 @@
 - Added `/perf graph` shortcut.
 
 ## Static / Automated Checks
+- 0.4.0-dev Phase 1 static scope checks passed: version metadata is 0.4.0-dev; Start/Stop/Status paths exist; selected events are fully unregistered on Stop; capture is bounded to 10 x 0.5-second buckets and 30 seconds; Pause gates capture; Reset clears capture state; no payload storage and no `RegisterAllEvents()` path were introduced.
+- Conservative gross `local` token count for current `Performante.lua`: 164, below the Lua 5.0.3 200-local function/chunk ceiling; this is not a compiler pass.
+- Static inspection found and fixed one pre-runtime lexical-scope defect where capture readiness initially bound to a global instead of the existing local `monitoringReady`.
 - Manual compatibility review against the VanillaTemplate 1.12.1/Lua 5.0.3 rules.
 - Current source contains 112 `local` tokens in total even with function-body locals included, still comfortably below the 200-local top-level compiler ceiling as a conservative gross count.
 - Verified addon texture paths contain Lua-safe doubled backslashes in source.
@@ -189,12 +199,20 @@
 - Not tested: Delivery to another client/recipient; Lua 5.0.3 canonical compiler check not run. Local self-receipt does not prove remote delivery.
 
 ### Next Runtime Test
-- Optional controlled two-client delivery test for 0.3.0-dev when a second client is available; confirm receiving client sees the message. Otherwise review the provisional 0.4.0-dev design before starting any 0.4 code.
+- 0.4.0-dev Phase 1 gate, single client:
+  1. Confirm accepted Comms / Frametime / Graph behavior still works before capture.
+  2. Run `/perf capture start`, generate ordinary activity/combat, then `/perf capture status`; verify duration/total/top-event counts advance.
+  3. Pause during an active capture, wait and generate activity, check status, then Resume; verify capture duration/counts did not advance while paused and continue after Resume.
+  4. Run `/perf capture stop`, generate more activity, then `/perf capture status`; verify counts/duration remain unchanged, demonstrating extra event instrumentation was removed.
+  5. Start a fresh capture and let it reach 30 seconds; verify the safety stop message and stopped status.
+  6. During capture, watch Frametime/Graph for an obvious FPS/hitch regression compared with the accepted baseline.
+  7. Recheck 0.3 PERFTEST outbound/total/rate plus Reset and hidden-window collection.
+- Cross-client PERFTEST delivery remains optional 0.3 validation debt when a second client becomes available.
 
 ## Planned / Next Work
-- Accepted 0.2.3 feature set remains the inherited baseline; 0.3.0-dev has passed user single-client runtime tests.
-- Current runtime line: 0.3.0-dev single-client tested and accepted; cross-client delivery has not been tested.
-- 0.4 stepped design is approved. Next development chat starts Phase 1 only: bounded temporary event capture, targeting 0.4.0-dev.
+- 0.3.0-dev single-client behavior is the inherited accepted runtime baseline; cross-client delivery remains untested.
+- 0.4.0-dev Phase 1 bounded temporary event capture is implemented and statically reviewed, awaiting the runtime gate above.
+- Phase 2 correlation remains blocked until the user accepts the Phase 1 runtime result.
 
 ## Deferred / Out of Scope
 - 0.4 later phases remain gated: Phase 2 correlation, Phase 3 UI and Phase 4 evidence-driven refinement must not be pulled into Phase 1.
@@ -209,7 +227,7 @@
 - External/runtime prerequisites: None beyond a Vanilla WoW 1.12.1-compatible client.
 
 ## Exact Next Step
-Start a new development chat for 0.4 Phase 1 only. Read `dev_rulebook.md` and this file, verify `dev` head, preserve the accepted 0.3.0-dev runtime behavior, then implement bounded temporary event capture targeting `0.4.0-dev`. Do not implement hitch correlation or the Events UI yet. Cross-client PERFTEST delivery and the Lua 5.0.3 compiler check remain 0.3 validation debt.
+Runtime-test 0.4.0-dev Phase 1 using the seven checks above. Fix only demonstrated Phase 1 defects. Do not start Phase 2 hitch correlation or Phase 3 Events UI until this runtime gate is accepted. Cross-client PERFTEST delivery and the Lua 5.0.3 compiler check remain validation debt.
 
 ## 0.3 Implementation Status
 - Implemented native SendAddonMessage diagnostic wrapper and received CHAT_MSG_ADDON accounting, grouped by prefix, with In/Out/Total and five-second messages/sec columns in the unchanged Comms tab footprint.
