@@ -2,7 +2,7 @@
 
 ## Current
 - Branch: `dev`
-- Version: `0.4.0-dev`
+- Version: `0.4.1-dev`
 - Accepted runtime baseline: `0.3.0-dev` single-client matrix passed at runtime commit `42d0ba7ec034958d77579ebe0884c6c02755694b` with metadata/localization completed by `38f168a2c469da0d15c7c599fcb938a2bfb8c8f5`; later documentation-only commits do not change that accepted runtime.
 - Latest tested baseline: `0.3.0-dev` single-client runtime matrix described under Last Runtime Test.
 - Stable baseline: None; `main` currently contains only the repository README.
@@ -147,7 +147,9 @@
 - `dev`: `3727265ccc03a638b47be91bc41223df5ff4a358` — 0.2.1-dev; user-tested and accepted.
 - `dev`: `a4cef40e43df3cf2950123125a33d39b278406c9` — 0.2.2-dev initial Graph-tab implementation; superseded before runtime testing.
 - `dev`: `b051fa642c35a49e809600903b96d0e4984d5b45` — 0.2.3-dev; Graph-tab build, additionally suppressing periodic redraw work while paused.
-- `dev`: `855bc182b94a719ef8e893a17af35f29aed9b4e6` — 0.4.0-dev Phase 1 runtime implementation complete after lexical-scope correction and version bump; awaiting runtime test.
+- `dev`: `855bc182b94a719ef8e893a17af35f29aed9b4e6` — 0.4.0-dev Phase 1 runtime implementation complete after lexical-scope correction and version bump.
+- `dev`: `a0d5c5642ed112366b7d70a995af8073e641a80c` — revised 0.4 contract: complete Phases 1-3 before requesting runtime testing.
+- `dev`: `ddd4dd56e7158db444d9a5b13ae33b8c2faf689f` — Phase 2 hitch/event correlation implementation after cleanup; metadata version is `0.4.1-dev` at `be0cc0b19f17a6a68a52a3b87b20ceb8d57d9793`.
 
 ## Completed / User-Verified
 - The precursor AddonCommsMonitor 0.1.0 was used by the user and its compact live layout was accepted.
@@ -157,6 +159,11 @@
 - Performante 0.2.1-dev at `3727265ccc03a638b47be91bc41223df5ff4a358` was user-tested: Comms, Frametime, hitch counters/history, memory display, Reset/Pause, hidden-window collection and open/closed persistence all appeared to work.
 
 ## Implemented / Awaiting Runtime Test
+- 0.4.1-dev Phase 2 correlates captured >50 ms hitches with bounded event volume; it does not change the accepted always-on 0.3 diagnostics.
+- Correlation timing is derived from Phase 1 measurement behavior: event callbacks between OnUpdate calls are stamped against the pre-advance capture clock, so a detected hitch uses the current 0.5-second bucket plus the immediately preceding bucket as a 1.0-second trailing event window.
+- The immediately preceding two 0.5-second buckets form the local 1.0-second comparison baseline. A hitch is labelled burst-associated only when the current window is at least 10 events higher and at least 50% above that preceding window; otherwise it is counted as isolated. This is explicitly a temporal burst heuristic, not causation.
+- Correlation stores only compact bounded summaries: burst-associated and isolated hitch counts plus the worst captured hitch frame time, current/prior event totals and top three event names/counts. No raw per-occurrence hitch/event history is added.
+- `/perf capture status` exposes the Phase 2 summary temporarily for static/development inspection; the dedicated user-facing Events/Correlation view remains Phase 3.
 - 0.4.0-dev Phase 1 adds an explicit temporary capture engine controlled by `/perf capture start`, `/perf capture stop` and `/perf capture status`; no Events UI was added.
 - Capture registers a fixed selected set of 42 high-activity Vanilla events only while active and unregisters all of them on Stop.
 - Capture data is bounded: ten preallocated 0.5-second buckets per selected event, overall counts, recent five-second rates and capture duration. No event payloads/arguments or per-occurrence log are stored.
@@ -176,17 +183,18 @@
 
 ## Static / Automated Checks
 - 0.4.0-dev Phase 1 static scope checks passed: version metadata is 0.4.0-dev; Start/Stop/Status paths exist; selected events are fully unregistered on Stop; capture is bounded to 10 x 0.5-second buckets and 30 seconds; Pause gates capture; Reset clears capture state; no payload storage and no `RegisterAllEvents()` path were introduced.
-- Conservative gross `local` token count for current `Performante.lua`: 164, below the Lua 5.0.3 200-local function/chunk ceiling; this is not a compiler pass.
+- Phase 2 inspection confirms correlation runs only while capture is active and only for >50 ms hitches; it uses current/prior fixed capture buckets, retains no payloads, creates no unbounded occurrence history and adds no `RegisterAllEvents()` path.
+- Conservative gross `local` token count for current `Performante.lua`: 189, below the Lua 5.0.3 200-local function/chunk ceiling; this is not a compiler pass.
 - Static inspection found and fixed one pre-runtime lexical-scope defect where capture readiness initially bound to a global instead of the existing local `monitoringReady`.
 - Manual compatibility review against the VanillaTemplate 1.12.1/Lua 5.0.3 rules.
 - Verified addon texture paths contain Lua-safe doubled backslashes in source.
 - Verified 0.2.3 keeps the always-active driver frame, native `gcinfo()`, all four hitch thresholds and visibility SavedVariable behavior.
 - Verified all graph textures are created before the driver `OnUpdate` path, the history uses a fixed ring buffer, sampling is 10 Hz, rendering is 5 Hz, old timestamp history code is removed, and Pause gates graph redraw.
-- Canonical `tools/lua50/check_lua50.sh` compiler check not run in this chat because the GitHub connector does not provide the private template checkout as an executable filesystem tree.
+- Canonical `tools/lua50/check_lua50.sh` compiler check not run: repository access is through the GitHub connector, and no runnable checker/template checkout or system Lua compiler is available in the executable environment.
 
 ## Current Issues
 - No known runtime issues in the accepted 0.3.0-dev single-client baseline.
-- 0.4.0-dev Phase 1 has no known static defects after the readiness-scope correction; runtime behavior is not yet user-tested.
+- 0.4.0-dev Phase 1 and 0.4.1-dev Phase 2 have no known static defects after review; neither 0.4 delta has been runtime-tested by design. Phase 3 must be completed before requesting runtime testing.
 
 ## Testing
 
