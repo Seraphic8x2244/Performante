@@ -48,6 +48,8 @@ local commsClock = 0
 local RATE_BUCKETS = 5
 
 local paused = false
+local currentView = "comms"
+local monitoringReady = false
 
 local function ClearCaptureData()
     local i
@@ -143,8 +145,6 @@ local function CaptureStatus()
 end
 
 ClearCaptureData()
-local currentView = "comms"
-local monitoringReady = false
 
 -- Five fixed one-second buckets per observed prefix, allocated only once.
 local function RecordMessage(prefix, outbound)
