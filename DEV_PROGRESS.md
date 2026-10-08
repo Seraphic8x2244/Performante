@@ -76,9 +76,9 @@
   - send a known message from the local client and verify Outbound/Total/rate;
   - confirm the hook does not break the actual addon message reaching its intended recipient.
 
-### Provisional 0.4.0-dev Skeleton — Event Storm / Hitch Correlation
+### Agreed 0.4.x-dev Plan — Event Storm / Hitch Correlation
 - Purpose: help answer **what was happening around a visible frametime hitch**, without pretending Vanilla can provide modern per-addon CPU attribution.
-- This scope is provisional and must be reviewed/refined in a later chat before implementation.
+- This scope and stepped implementation plan were reviewed and approved by the user on 2026-10-08. Implement it incrementally; do not collapse phases or pull later-phase work forward.
 - Event capture must be **explicitly armed/temporary**, never an always-on `RegisterAllEvents()` monitor.
 - Prefer a short diagnostic capture window or bounded ring-buffer session with a clear active/inactive state.
 - During capture, count event frequency/rate and retain only bounded summary/correlation data needed around hitches.
@@ -93,6 +93,46 @@
   - capture duration/state and Performante overhead safeguards.
 - Version target if/when this scope is approved after 0.3: `0.4.0-dev`.
 - Full per-addon CPU attribution remains out of scope unless the target client exposes a trustworthy native mechanism; do not infer it from event counts.
+
+#### Phase 1 — Bounded Temporary Event Capture
+- Target first runtime revision: `0.4.0-dev`.
+- Add explicit Start/Stop Capture state; broad event instrumentation exists only while capture is active.
+- Register the selected diagnostic events on capture start and unregister them completely on stop.
+- Count events in short fixed time buckets using bounded/preallocated state; do not build an unbounded per-occurrence event log.
+- Track overall event counts/rates and capture duration/state.
+- Integrate capture with Reset/Pause consistently; Pause must not silently keep diagnostic capture advancing.
+- Keep payload/event-argument storage out of this phase.
+- Include practical safeguards against Performante distorting the workload it measures.
+- Runtime gate before Phase 2: verify events count, Stop removes extra instrumentation, capture does not cause obvious FPS/hitch regression, and all accepted 0.3 functionality still works.
+
+#### Phase 2 — Hitch / Event Correlation
+- Begin only after Phase 1 runtime acceptance.
+- Correlate the bounded event buckets with existing frametime/hitch timing.
+- Preserve compact summaries around significant hitches rather than raw event occurrence histories.
+- Distinguish an **event-storm-associated hitch** from an **isolated hitch with no unusual event volume**; the latter is a useful diagnostic result, not a failure.
+- Decide and document the correlation window from measurement/timing behavior before hard-coding it; do not assume an arbitrary +/-500 ms window.
+- Report temporal association only, never causation.
+- Runtime gate before Phase 3: generate known event activity and verify its timing/correlation against observed graph/hitch behavior.
+
+#### Phase 3 — Diagnostic Events UI
+- Begin only after the capture and correlation data paths are runtime-proven.
+- Add a compact dedicated Events/Correlation view rather than cluttering Comms or Graph.
+- Candidate display: capture state/duration, top events by count/rate, hitch totals, worst hitch, and a compact summary of events around the worst/selected hitch.
+- Keep controls explicit and the normal non-capture monitoring path cheap.
+- Runtime gate: UI/control behavior, real gameplay capture, Graph interaction, Pause/Reset, hidden-window behavior where applicable, and full regression of accepted diagnostics.
+
+#### Phase 4 — Real Hitch Investigation / Evidence-Driven Refinement
+- Use the completed diagnostic build during actual gameplay to reproduce the user's real hitches.
+- Inspect whether hitches repeatedly coincide with event storms or occur with normal event volume.
+- If a particular event family is implicated, use that evidence to choose the next narrow diagnostic/investigation.
+- If event volume is normal, record that result and investigate a different mechanism rather than adding more event logging.
+- Make only evidence-driven `0.4.x-dev` refinements; do not pre-design speculative attribution features.
+
+#### Chat / Handoff Boundaries
+- Plan for four development chats: Phase 1 capture engine; Phase 2 correlation; Phase 3 UI; Phase 4 real-hitch investigation/refinement.
+- Finish each phase with its runtime gate where possible, update this document with exact tested/unverified state, and create a clean handoff commit before starting the next chat.
+- Meaningful runtime revisions must bump the `.toc` development version per `dev_rulebook.md`; expected progression is `0.4.0-dev`, then `0.4.1-dev`, `0.4.2-dev` as needed rather than one unversioned multi-chat build.
+- Do not begin a later phase merely because its design is documented; the previous phase's runtime gate controls progression.
 
 
 ## Recent Relevant Commits
@@ -154,10 +194,10 @@
 ## Planned / Next Work
 - Accepted 0.2.3 feature set remains the inherited baseline; 0.3.0-dev has passed user single-client runtime tests.
 - Current runtime line: 0.3.0-dev single-client tested and accepted; cross-client delivery has not been tested.
-- After 0.3 is user-verified, review and refine the provisional 0.4.0-dev event/hitch-correlation skeleton before any 0.4 runtime code is written.
+- 0.4 stepped design is approved. Next development chat starts Phase 1 only: bounded temporary event capture, targeting 0.4.0-dev.
 
 ## Deferred / Out of Scope
-- 0.4 event-storm/hitch correlation is roadmap-only while 0.3 is current; its exact design is intentionally deferred.
+- 0.4 later phases remain gated: Phase 2 correlation, Phase 3 UI and Phase 4 evidence-driven refinement must not be pulled into Phase 1.
 - Any always-on `RegisterAllEvents()` design.
 - Sender drill-down and payload storage in 0.3.
 - Persisted counters or historical sessions.
@@ -169,7 +209,7 @@
 - External/runtime prerequisites: None beyond a Vanilla WoW 1.12.1-compatible client.
 
 ## Exact Next Step
-Review/refine proposed 0.4.0-dev event/hitch-correlation design with user. Cross-client PERFTEST delivery and Lua 5.0.3 compiler remain validation debt for 0.3; do not silently mark them passed. Keep 0.4 roadmap-only until specifically approved.
+Start a new development chat for 0.4 Phase 1 only. Read `dev_rulebook.md` and this file, verify `dev` head, preserve the accepted 0.3.0-dev runtime behavior, then implement bounded temporary event capture targeting `0.4.0-dev`. Do not implement hitch correlation or the Events UI yet. Cross-client PERFTEST delivery and the Lua 5.0.3 compiler check remain 0.3 validation debt.
 
 ## 0.3 Implementation Status
 - Implemented native SendAddonMessage diagnostic wrapper and received CHAT_MSG_ADDON accounting, grouped by prefix, with In/Out/Total and five-second messages/sec columns in the unchanged Comms tab footprint.
