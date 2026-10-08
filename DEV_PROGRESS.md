@@ -6,8 +6,8 @@
 - Accepted runtime baseline: `0.3.0-dev` single-client matrix passed at runtime commit `42d0ba7ec034958d77579ebe0884c6c02755694b` with metadata/localization completed by `38f168a2c469da0d15c7c599fcb938a2bfb8c8f5`; later documentation-only commits do not change that accepted runtime.
 - Latest tested baseline: `0.3.0-dev` single-client runtime matrix described under Last Runtime Test.
 - Stable baseline: None; `main` currently contains only the repository README.
-- Goal: Preserve the accepted 0.3.0-dev runtime and runtime-test 0.4 Phase 1 bounded temporary event capture. Phase 2 hitch correlation remains gated.
-- Current scope boundary: 0.4.0-dev contains Phase 1 capture only. Do not start Phase 2 hitch correlation or Phase 3 Events UI until the Phase 1 runtime gate passes.
+- Goal: Preserve the accepted 0.3.0-dev runtime while completing all three agreed 0.4 diagnostic phases before requesting runtime testing.
+- Current scope boundary: Phase 1 bounded capture is implemented. Phase 2 hitch/event correlation is the current implementation scope. Phase 3 Events/Correlation UI follows in the next development chat. Runtime testing is deliberately deferred until Phases 1-3 are complete; Phase 4 real-hitch investigation remains post-runtime.
 
 ## Current Design / Development Contract
 
@@ -78,7 +78,7 @@
 
 ### Agreed 0.4.x-dev Plan — Event Storm / Hitch Correlation
 - Purpose: help answer **what was happening around a visible frametime hitch**, without pretending Vanilla can provide modern per-addon CPU attribution.
-- This scope and stepped implementation plan were reviewed and approved by the user on 2026-10-08. Implement it incrementally; do not collapse phases or pull later-phase work forward.
+- This scope and stepped implementation plan were reviewed and approved by the user on 2026-10-08. On 2026-10-09 the user revised the validation sequence: implement Phases 1, 2 and 3 across bounded development handoffs first, then run one combined runtime gate. Keep each implementation phase scoped; do not pull Phase 3 UI into Phase 2.
 - Event capture must be **explicitly armed/temporary**, never an always-on `RegisterAllEvents()` monitor.
 - Prefer a short diagnostic capture window or bounded ring-buffer session with a clear active/inactive state.
 - During capture, count event frequency/rate and retain only bounded summary/correlation data needed around hitches.
@@ -103,19 +103,19 @@
 - Integrate capture with Reset/Pause consistently; Pause must not silently keep diagnostic capture advancing.
 - Keep payload/event-argument storage out of this phase.
 - Include practical safeguards against Performante distorting the workload it measures.
-- Runtime gate before Phase 2: verify events count, Stop removes extra instrumentation, capture does not cause obvious FPS/hitch regression, and all accepted 0.3 functionality still works.
+- Deferred combined runtime gate after Phase 3 must verify events count, Stop removes extra instrumentation, capture does not cause obvious FPS/hitch regression, and all accepted 0.3 functionality still works.
 
 #### Phase 2 — Hitch / Event Correlation
-- Begin only after Phase 1 runtime acceptance.
+- Begin after Phase 1 implementation/static handoff; Phase 1 runtime validation is intentionally deferred until Phase 3 is complete.
 - Correlate the bounded event buckets with existing frametime/hitch timing.
 - Preserve compact summaries around significant hitches rather than raw event occurrence histories.
 - Distinguish an **event-storm-associated hitch** from an **isolated hitch with no unusual event volume**; the latter is a useful diagnostic result, not a failure.
 - Decide and document the correlation window from measurement/timing behavior before hard-coding it; do not assume an arbitrary +/-500 ms window.
 - Report temporal association only, never causation.
-- Runtime gate before Phase 3: generate known event activity and verify its timing/correlation against observed graph/hitch behavior.
+- Deferred combined runtime gate after Phase 3 must generate known event activity and verify its timing/correlation against observed graph/hitch behavior.
 
 #### Phase 3 — Diagnostic Events UI
-- Begin only after the capture and correlation data paths are runtime-proven.
+- Begin after Phase 2 implementation/static handoff; capture and correlation runtime validation is intentionally deferred to the combined post-Phase-3 runtime gate.
 - Add a compact dedicated Events/Correlation view rather than cluttering Comms or Graph.
 - Candidate display: capture state/duration, top events by count/rate, hitch totals, worst hitch, and a compact summary of events around the worst/selected hitch.
 - Keep controls explicit and the normal non-capture monitoring path cheap.
@@ -130,9 +130,9 @@
 
 #### Chat / Handoff Boundaries
 - Plan for four development chats: Phase 1 capture engine; Phase 2 correlation; Phase 3 UI; Phase 4 real-hitch investigation/refinement.
-- Finish each phase with its runtime gate where possible, update this document with exact tested/unverified state, and create a clean handoff commit before starting the next chat.
+- Finish Phases 1 and 2 with static checks plus an explicit untested handoff. Finish Phase 3 with static checks, then request one combined runtime matrix covering all three phases before Phase 4 begins.
 - Meaningful runtime revisions must bump the `.toc` development version per `dev_rulebook.md`; expected progression is `0.4.0-dev`, then `0.4.1-dev`, `0.4.2-dev` as needed rather than one unversioned multi-chat build.
-- Do not begin a later phase merely because its design is documented; the previous phase's runtime gate controls progression.
+- Do not begin Phase 3 during the Phase 2 chat. The handoff boundary, rather than an intermediate runtime gate, controls progression through Phases 1-3. Phase 4 remains blocked on the combined runtime acceptance.
 
 
 ## Recent Relevant Commits
