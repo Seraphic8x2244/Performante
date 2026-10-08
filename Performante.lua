@@ -1,6 +1,6 @@
 -- Performante
 -- Vanilla WoW 1.12.1 / Lua 5.0.3
--- 0.3.0: bidirectional communications and bounded rates alongside frametime diagnostics.
+-- 0.4.0: bounded temporary event capture alongside accepted 0.3 diagnostics.
 
 local ADDON_NAME = "Performante"
 local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version")
@@ -8,6 +8,36 @@ local L = Performante_L
 
 local Performante = CreateFrame("Frame", "PerformanteFrame", UIParent)
 local driver = CreateFrame("Frame", "PerformanteDriver", UIParent)
+local captureFrame = CreateFrame("Frame", "PerformanteCaptureFrame", UIParent)
+
+local CAPTURE_BUCKETS = 10
+local CAPTURE_BUCKET_SECONDS = 0.5
+local CAPTURE_MAX_SECONDS = 30
+local CAPTURE_EVENTS = {
+    "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_STATE", "BAG_UPDATE",
+    "CHAT_MSG_COMBAT_CREATURE_VS_CREATURE_HITS", "CHAT_MSG_COMBAT_CREATURE_VS_CREATURE_MISSES",
+    "CHAT_MSG_COMBAT_FRIENDLYPLAYER_HITS", "CHAT_MSG_COMBAT_FRIENDLYPLAYER_MISSES",
+    "CHAT_MSG_COMBAT_HOSTILEPLAYER_HITS", "CHAT_MSG_COMBAT_HOSTILEPLAYER_MISSES",
+    "CHAT_MSG_COMBAT_PARTY_HITS", "CHAT_MSG_COMBAT_PARTY_MISSES",
+    "CHAT_MSG_COMBAT_SELF_HITS", "CHAT_MSG_COMBAT_SELF_MISSES",
+    "CHAT_MSG_SPELL_CREATURE_VS_CREATURE_BUFF", "CHAT_MSG_SPELL_CREATURE_VS_CREATURE_DAMAGE",
+    "CHAT_MSG_SPELL_FRIENDLYPLAYER_BUFF", "CHAT_MSG_SPELL_FRIENDLYPLAYER_DAMAGE",
+    "CHAT_MSG_SPELL_HOSTILEPLAYER_BUFF", "CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE",
+    "CHAT_MSG_SPELL_PARTY_BUFF", "CHAT_MSG_SPELL_PARTY_DAMAGE",
+    "CHAT_MSG_SPELL_PERIODIC_CREATURE_BUFFS", "CHAT_MSG_SPELL_PERIODIC_CREATURE_DAMAGE",
+    "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_BUFFS", "CHAT_MSG_SPELL_PERIODIC_FRIENDLYPLAYER_DAMAGE",
+    "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_BUFFS", "CHAT_MSG_SPELL_PERIODIC_HOSTILEPLAYER_DAMAGE",
+    "CHAT_MSG_SPELL_PERIODIC_PARTY_BUFFS", "CHAT_MSG_SPELL_PERIODIC_PARTY_DAMAGE",
+    "CHAT_MSG_SPELL_PERIODIC_SELF_BUFFS", "CHAT_MSG_SPELL_PERIODIC_SELF_DAMAGE",
+    "CHAT_MSG_SPELL_SELF_BUFF", "CHAT_MSG_SPELL_SELF_DAMAGE",
+    "PLAYER_TARGET_CHANGED", "SPELLCAST_DELAYED", "SPELLCAST_FAILED", "SPELLCAST_INTERRUPTED",
+    "SPELLCAST_START", "SPELLCAST_STOP", "UNIT_AURA", "UNIT_HEALTH", "UNIT_MANA"
+}
+local captureEntries = {}
+local captureActive = false
+local captureClock = 0
+local captureTotal = 0
+local captureAutoStopped = false
 
 local counts = {}
 local sorted = {}
@@ -18,6 +48,101 @@ local commsClock = 0
 local RATE_BUCKETS = 5
 
 local paused = false
+
+local function ClearCaptureData()
+    local i
+    local j
+    captureClock = 0
+    captureTotal = 0
+    captureAutoStopped = false
+    for i = 1, table.getn(CAPTURE_EVENTS) do
+        local entry = captureEntries[CAPTURE_EVENTS[i]]
+        if not entry then
+            entry = { count = 0, buckets = {}, stamps = {} }
+            captureEntries[CAPTURE_EVENTS[i]] = entry
+        end
+        entry.count = 0
+        for j = 1, CAPTURE_BUCKETS do
+            entry.buckets[j] = 0
+            entry.stamps[j] = -1
+        end
+    end
+end
+
+local function StopCapture(autoStopped)
+    local i
+    if captureActive then
+        for i = 1, table.getn(CAPTURE_EVENTS) do
+            captureFrame:UnregisterEvent(CAPTURE_EVENTS[i])
+        end
+    end
+    captureActive = false
+    captureAutoStopped = autoStopped and true or false
+end
+
+local function StartCapture()
+    local i
+    StopCapture(false)
+    ClearCaptureData()
+    for i = 1, table.getn(CAPTURE_EVENTS) do
+        captureFrame:RegisterEvent(CAPTURE_EVENTS[i])
+    end
+    captureActive = true
+end
+
+local function RecordCapturedEvent(eventName)
+    if not captureActive or paused or not monitoringReady then return end
+    local entry = captureEntries[eventName]
+    if not entry then return end
+    entry.count = entry.count + 1
+    captureTotal = captureTotal + 1
+    local bucket = math.floor(captureClock / CAPTURE_BUCKET_SECONDS)
+    local slot = math.mod(bucket, CAPTURE_BUCKETS) + 1
+    if entry.stamps[slot] ~= bucket then
+        entry.stamps[slot] = bucket
+        entry.buckets[slot] = 0
+    end
+    entry.buckets[slot] = entry.buckets[slot] + 1
+end
+
+local function CaptureRecentRate(entry)
+    local bucket = math.floor(captureClock / CAPTURE_BUCKET_SECONDS)
+    local sum = 0
+    local i
+    for i = 1, CAPTURE_BUCKETS do
+        local stamp = entry.stamps[i]
+        if stamp <= bucket and stamp > bucket - CAPTURE_BUCKETS then
+            sum = sum + entry.buckets[i]
+        end
+    end
+    return sum / (CAPTURE_BUCKETS * CAPTURE_BUCKET_SECONDS)
+end
+
+local function CaptureStatus()
+    local ranked = {}
+    local i
+    for i = 1, table.getn(CAPTURE_EVENTS) do
+        local eventName = CAPTURE_EVENTS[i]
+        local entry = captureEntries[eventName]
+        if entry and entry.count > 0 then
+            table.insert(ranked, { name = eventName, count = entry.count, rate = CaptureRecentRate(entry) })
+        end
+    end
+    table.sort(ranked, function(a, b)
+        if a.count == b.count then return a.name < b.name end
+        return a.count > b.count
+    end)
+    local state = captureActive and "ACTIVE" or "STOPPED"
+    if captureAutoStopped then state = "STOPPED (30s limit)" end
+    DEFAULT_CHAT_FRAME:AddMessage("Performante capture: " .. state .. ", " .. string.format("%.1f", captureClock) .. "s, " .. captureTotal .. " events")
+    local limit = table.getn(ranked)
+    if limit > 5 then limit = 5 end
+    for i = 1, limit do
+        DEFAULT_CHAT_FRAME:AddMessage("  " .. ranked[i].name .. ": " .. ranked[i].count .. " (" .. string.format("%.1f/s", ranked[i].rate) .. ")")
+    end
+end
+
+ClearCaptureData()
 local currentView = "comms"
 local monitoringReady = false
 
@@ -586,6 +711,7 @@ local function ResetAll()
     uiElapsed = 0
 
     ResetGraph()
+    ClearCaptureData()
     Refresh()
 end
 
@@ -666,6 +792,10 @@ pauseButton:SetScript("OnClick", function()
     Refresh()
 end)
 
+captureFrame:SetScript("OnEvent", function()
+    RecordCapturedEvent(event)
+end)
+
 driver:RegisterEvent("CHAT_MSG_ADDON")
 driver:RegisterEvent("VARIABLES_LOADED")
 driver:SetScript("OnEvent", function()
@@ -705,6 +835,14 @@ driver:SetScript("OnUpdate", function()
         end
 
         AdvanceGraph(elapsed, currentFrameMs)
+        if captureActive then
+            captureClock = captureClock + elapsed
+            if captureClock >= CAPTURE_MAX_SECONDS then
+                captureClock = CAPTURE_MAX_SECONDS
+                StopCapture(true)
+                DEFAULT_CHAT_FRAME:AddMessage("Performante: event capture stopped at 30-second safety limit. Use /perf capture status.")
+            end
+        end
     end
 
     uiElapsed = uiElapsed + elapsed
@@ -756,6 +894,14 @@ SlashCmdList["PERFORMANTE"] = function(msg)
     elseif command == "graph" then
         SetWindowShown(true)
         SetView("graph")
+    elseif command == "capture start" then
+        StartCapture()
+        DEFAULT_CHAT_FRAME:AddMessage("Performante: event capture started (30-second maximum).")
+    elseif command == "capture stop" then
+        StopCapture(false)
+        CaptureStatus()
+    elseif command == "capture status" or command == "capture" then
+        CaptureStatus()
     elseif command == "show" then
         SetWindowShown(true)
     elseif command == "hide" then
