@@ -1,6 +1,6 @@
 -- Performante
 -- Vanilla WoW 1.12.1 / Lua 5.0.3
--- 0.4.0: bounded temporary event capture alongside accepted 0.3 diagnostics.
+-- 0.4.1: bounded temporary event capture with hitch/event correlation alongside accepted 0.3 diagnostics.
 
 local ADDON_NAME = "Performante"
 local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version")
@@ -38,6 +38,15 @@ local captureActive = false
 local captureClock = 0
 local captureTotal = 0
 local captureAutoStopped = false
+local captureBucketTotals = {}
+local captureBucketStamps = {}
+local correlatedHitches = 0
+local isolatedHitches = 0
+local worstCorrelatedHitchMs = 0
+local worstCorrelationEventCount = 0
+local worstCorrelationBaselineCount = 0
+local worstCorrelationTopNames = { "", "", "" }
+local worstCorrelationTopCounts = { 0, 0, 0 }
 
 local counts = {}
 local sorted = {}
@@ -57,6 +66,19 @@ local function ClearCaptureData()
     captureClock = 0
     captureTotal = 0
     captureAutoStopped = false
+    correlatedHitches = 0
+    isolatedHitches = 0
+    worstCorrelatedHitchMs = 0
+    worstCorrelationEventCount = 0
+    worstCorrelationBaselineCount = 0
+    for j = 1, CAPTURE_BUCKETS do
+        captureBucketTotals[j] = 0
+        captureBucketStamps[j] = -1
+    end
+    for j = 1, 3 do
+        worstCorrelationTopNames[j] = ""
+        worstCorrelationTopCounts[j] = 0
+    end
     for i = 1, table.getn(CAPTURE_EVENTS) do
         local entry = captureEntries[CAPTURE_EVENTS[i]]
         if not entry then
@@ -104,7 +126,12 @@ local function RecordCapturedEvent(eventName)
         entry.stamps[slot] = bucket
         entry.buckets[slot] = 0
     end
+    if captureBucketStamps[slot] ~= bucket then
+        captureBucketStamps[slot] = bucket
+        captureBucketTotals[slot] = 0
+    end
     entry.buckets[slot] = entry.buckets[slot] + 1
+    captureBucketTotals[slot] = captureBucketTotals[slot] + 1
 end
 
 local function CaptureRecentRate(entry)
@@ -118,6 +145,80 @@ local function CaptureRecentRate(entry)
         end
     end
     return sum / (CAPTURE_BUCKETS * CAPTURE_BUCKET_SECONDS)
+end
+
+local function CaptureBucketTotal(bucket)
+    if bucket < 0 then return 0 end
+    local slot = math.mod(bucket, CAPTURE_BUCKETS) + 1
+    if captureBucketStamps[slot] == bucket then
+        return captureBucketTotals[slot]
+    end
+    return 0
+end
+
+local function CaptureEventWindowCount(entry, firstBucket, lastBucket)
+    local sum = 0
+    local bucket
+    for bucket = firstBucket, lastBucket do
+        if bucket >= 0 then
+            local slot = math.mod(bucket, CAPTURE_BUCKETS) + 1
+            if entry.stamps[slot] == bucket then
+                sum = sum + entry.buckets[slot]
+            end
+        end
+    end
+    return sum
+end
+
+local function RecordHitchCorrelation(frameMs)
+    if not captureActive or paused or frameMs <= 50 then return end
+
+    -- Event handlers run between OnUpdate calls while captureClock still names the
+    -- pre-advance bucket. Correlate that bucket plus its predecessor (1.0s trailing).
+    -- Compare with the immediately preceding 1.0s pair; no future/symmetric window
+    -- is invented because those events have not happened when the hitch is detected.
+    local bucket = math.floor(captureClock / CAPTURE_BUCKET_SECONDS)
+    local eventCount = CaptureBucketTotal(bucket) + CaptureBucketTotal(bucket - 1)
+    local baselineCount = CaptureBucketTotal(bucket - 2) + CaptureBucketTotal(bucket - 3)
+    local stormAssociated = false
+
+    -- "Storm" is a local burst classification, not causation: require both a
+    -- meaningful absolute increase and >=50% growth over the preceding window.
+    if eventCount >= baselineCount + 10 and eventCount * 2 >= baselineCount * 3 then
+        stormAssociated = true
+        correlatedHitches = correlatedHitches + 1
+    else
+        isolatedHitches = isolatedHitches + 1
+    end
+
+    if frameMs > worstCorrelatedHitchMs then
+        local i
+        local ranked = {}
+        worstCorrelatedHitchMs = frameMs
+        worstCorrelationEventCount = eventCount
+        worstCorrelationBaselineCount = baselineCount
+        for i = 1, table.getn(CAPTURE_EVENTS) do
+            local eventName = CAPTURE_EVENTS[i]
+            local entry = captureEntries[eventName]
+            local count = CaptureEventWindowCount(entry, bucket - 1, bucket)
+            if count > 0 then
+                table.insert(ranked, { name = eventName, count = count })
+            end
+        end
+        table.sort(ranked, function(a, b)
+            if a.count == b.count then return a.name < b.name end
+            return a.count > b.count
+        end)
+        for i = 1, 3 do
+            if ranked[i] then
+                worstCorrelationTopNames[i] = ranked[i].name
+                worstCorrelationTopCounts[i] = ranked[i].count
+            else
+                worstCorrelationTopNames[i] = ""
+                worstCorrelationTopCounts[i] = 0
+            end
+        end
+    end
 end
 
 local function CaptureStatus()
@@ -141,6 +242,15 @@ local function CaptureStatus()
     if limit > 5 then limit = 5 end
     for i = 1, limit do
         DEFAULT_CHAT_FRAME:AddMessage("  " .. ranked[i].name .. ": " .. ranked[i].count .. " (" .. string.format("%.1f/s", ranked[i].rate) .. ")")
+    end
+    DEFAULT_CHAT_FRAME:AddMessage("  >50ms hitch correlation: " .. correlatedHitches .. " burst-associated, " .. isolatedHitches .. " isolated")
+    if worstCorrelatedHitchMs > 0 then
+        DEFAULT_CHAT_FRAME:AddMessage("  Worst captured hitch: " .. string.format("%.1f ms", worstCorrelatedHitchMs) .. ", events " .. worstCorrelationEventCount .. " vs prior " .. worstCorrelationBaselineCount)
+        for i = 1, 3 do
+            if worstCorrelationTopCounts[i] > 0 then
+                DEFAULT_CHAT_FRAME:AddMessage("    " .. worstCorrelationTopNames[i] .. ": " .. worstCorrelationTopCounts[i])
+            end
+        end
     end
 end
 
@@ -834,6 +944,7 @@ driver:SetScript("OnUpdate", function()
             hitch200 = hitch200 + 1
         end
 
+        RecordHitchCorrelation(currentFrameMs)
         AdvanceGraph(elapsed, currentFrameMs)
         if captureActive then
             captureClock = captureClock + elapsed
