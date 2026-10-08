@@ -205,23 +205,19 @@
 - Not tested: Delivery to another client/recipient; Lua 5.0.3 canonical compiler check not run. Local self-receipt does not prove remote delivery.
 
 ### Next Runtime Test
-- 0.4.0-dev Phase 1 gate, single client:
-  1. Confirm accepted Comms / Frametime / Graph behavior still works before capture.
-  2. Run `/perf capture start`, generate ordinary activity/combat, then `/perf capture status`; verify duration/total/top-event counts advance.
-  3. Pause during an active capture, wait and generate activity, check status, then Resume; verify capture duration/counts did not advance while paused and continue after Resume.
-  4. Run `/perf capture stop`, generate more activity, then `/perf capture status`; verify counts/duration remain unchanged, demonstrating extra event instrumentation was removed.
-  5. Start a fresh capture and let it reach 30 seconds; verify the safety stop message and stopped status.
-  6. During capture, watch Frametime/Graph for an obvious FPS/hitch regression compared with the accepted baseline.
-  7. Recheck 0.3 PERFTEST outbound/total/rate plus Reset and hidden-window collection.
+- Deliberately deferred until Phase 3 is implemented and statically checked.
+- The combined post-Phase-3 matrix must cover: accepted 0.3 Comms/Frametime/Graph regression; Phase 1 Start/Stop/status, Pause/Resume, Reset, 30-second safety stop and overhead observation; Phase 2 known event activity versus >50 ms hitch correlation, including both burst-associated and isolated outcomes where practical; Phase 3 Events/Correlation UI/control behavior, Graph interaction and hidden-window behavior.
 - Cross-client PERFTEST delivery remains optional 0.3 validation debt when a second client becomes available.
 
 ## Planned / Next Work
-- 0.3.0-dev single-client behavior is the inherited accepted runtime baseline; cross-client delivery remains untested.
-- 0.4.0-dev Phase 1 bounded temporary event capture is implemented and statically reviewed, awaiting the runtime gate above.
-- Phase 2 correlation remains blocked until the user accepts the Phase 1 runtime result.
+- 0.3.0-dev single-client behavior remains the inherited accepted runtime baseline; cross-client delivery remains untested.
+- 0.4.0-dev Phase 1 bounded temporary event capture is implemented and statically reviewed; runtime validation is deferred.
+- 0.4.1-dev Phase 2 hitch/event correlation is implemented and statically reviewed; runtime validation is deferred.
+- Next development chat: implement Phase 3 dedicated compact Events/Correlation UI only, preserving the current capture/correlation data model unless a demonstrated implementation defect requires a narrow correction.
+- After Phase 3 static checks, request the combined Phase 1-3 runtime matrix. Do not begin Phase 4 before that runtime acceptance.
 
 ## Deferred / Out of Scope
-- 0.4 later phases remain gated: Phase 2 correlation, Phase 3 UI and Phase 4 evidence-driven refinement must not be pulled into Phase 1.
+- Phase 3 UI is the next bounded implementation phase and must not be pulled into this Phase 2 handoff. Phase 4 evidence-driven refinement remains gated on the combined Phase 1-3 runtime acceptance.
 - Any always-on `RegisterAllEvents()` design.
 - Sender drill-down and payload storage in 0.3.
 - Persisted counters or historical sessions.
@@ -233,9 +229,9 @@
 - External/runtime prerequisites: None beyond a Vanilla WoW 1.12.1-compatible client.
 
 ## Exact Next Step
-Runtime-test 0.4.0-dev Phase 1 using the seven checks above. Fix only demonstrated Phase 1 defects. Do not start Phase 2 hitch correlation or Phase 3 Events UI until this runtime gate is accepted. Cross-client PERFTEST delivery and the Lua 5.0.3 compiler check remain validation debt.
+In a fresh chat, verify the recorded handoff against remote `dev`, then implement Phase 3 only: a compact dedicated Events/Correlation view using the existing Phase 1 capture and Phase 2 correlation summaries. Preserve the accepted 0.3.0-dev baseline and do not request runtime testing until Phase 3 is implemented and statically checked. Then prepare the combined Phase 1-3 runtime matrix. Do not begin Phase 4.
 
 ## 0.3 Implementation Status
 - Implemented native SendAddonMessage diagnostic wrapper and received CHAT_MSG_ADDON accounting, grouped by prefix, with In/Out/Total and five-second messages/sec columns in the unchanged Comms tab footprint.
 - Counts and rate buckets are session/reset scoped; Pause freezes the diagnostic clock and collection. Payloads are not stored.
-- Single-client runtime checks user-tested and passed on 2026-10-07. Remote recipient delivery not tested. Lua 5.0.3 compiler check not run; connector access does not expose a runnable checkout. 0.4 Phase 1 is implemented and awaiting runtime test; later phases remain gated.
+- Single-client runtime checks user-tested and passed on 2026-10-07. Remote recipient delivery not tested. Lua 5.0.3 compiler check not run; connector access does not expose a runnable checkout. 0.4 Phase 1 and Phase 2 are implemented and statically reviewed; their runtime validation is deliberately deferred until Phase 3 is complete.
