@@ -180,12 +180,10 @@ local function RecordHitchCorrelation(frameMs)
     local bucket = math.floor(captureClock / CAPTURE_BUCKET_SECONDS)
     local eventCount = CaptureBucketTotal(bucket) + CaptureBucketTotal(bucket - 1)
     local baselineCount = CaptureBucketTotal(bucket - 2) + CaptureBucketTotal(bucket - 3)
-    local stormAssociated = false
 
     -- "Storm" is a local burst classification, not causation: require both a
     -- meaningful absolute increase and >=50% growth over the preceding window.
     if eventCount >= baselineCount + 10 and eventCount * 2 >= baselineCount * 3 then
-        stormAssociated = true
         correlatedHitches = correlatedHitches + 1
     else
         isolatedHitches = isolatedHitches + 1
