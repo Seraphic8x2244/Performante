@@ -1,6 +1,6 @@
 -- Performante
 -- Vanilla WoW 1.12.1 / Lua 5.0.3
--- 0.4.1: bounded temporary event capture with hitch/event correlation alongside accepted 0.3 diagnostics.
+-- 0.4.2: compact Events view for existing bounded capture and correlation summaries.
 
 local ADDON_NAME = "Performante"
 local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version")
@@ -337,6 +337,7 @@ local graphBucketWorstMs = 0
 local commsWidgets = {}
 local frameWidgets = {}
 local graphWidgets = {}
+local eventsWidgets = {}
 local graphBars = {}
 
 local i
@@ -455,25 +456,31 @@ local closeButton = CreateFrame("Button", nil, Performante, "UIPanelCloseButton"
 closeButton:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -2, -2)
 
 local commsTab = CreateFrame("Button", nil, Performante, "UIPanelButtonTemplate")
-commsTab:SetWidth(66)
+commsTab:SetWidth(55)
 commsTab:SetHeight(20)
 commsTab:SetPoint("TOPLEFT", Performante, "TOPLEFT", 12, -30)
 commsTab:SetText(L.COMMS)
 
 local frameTab = CreateFrame("Button", nil, Performante, "UIPanelButtonTemplate")
-frameTab:SetWidth(82)
+frameTab:SetWidth(76)
 frameTab:SetHeight(20)
 frameTab:SetPoint("LEFT", commsTab, "RIGHT", 4, 0)
 frameTab:SetText(L.FRAMETIME)
 
 local graphTab = CreateFrame("Button", nil, Performante, "UIPanelButtonTemplate")
-graphTab:SetWidth(62)
+graphTab:SetWidth(52)
 graphTab:SetHeight(20)
 graphTab:SetPoint("LEFT", frameTab, "RIGHT", 4, 0)
 graphTab:SetText(L.GRAPH)
 
+local eventsTab = CreateFrame("Button", nil, Performante, "UIPanelButtonTemplate")
+eventsTab:SetWidth(78)
+eventsTab:SetHeight(20)
+eventsTab:SetPoint("LEFT", graphTab, "RIGHT", 4, 0)
+eventsTab:SetText(L.EVENTS)
+
 local pauseState = Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-pauseState:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -14, -34)
+pauseState:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -29, -12)
 pauseState:SetWidth(72)
 pauseState:SetJustifyH("RIGHT")
 pauseState:SetText("")
@@ -634,6 +641,50 @@ local graphNowLabel = AddWidget(graphWidgets, Performante:CreateFontString(nil, 
 graphNowLabel:SetPoint("TOPRIGHT", Performante, "TOPRIGHT", -24, -241)
 graphNowLabel:SetText(L.NOW)
 
+-- Events tab: all widgets are pre-created and hidden outside this view.
+local eventsState = AddWidget(eventsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+eventsState:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -65)
+eventsState:SetWidth(302)
+eventsState:SetJustifyH("LEFT")
+
+local eventsHeading = AddWidget(eventsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+eventsHeading:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -86)
+eventsHeading:SetText(L.TOP_EVENTS)
+
+local eventsRows = {}
+for i = 1, 5 do
+    local line = AddWidget(eventsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+    line:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -102 - (i - 1) * 13)
+    line:SetWidth(302)
+    line:SetJustifyH("LEFT")
+    eventsRows[i] = line
+end
+
+local eventsHitches = AddWidget(eventsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
+eventsHitches:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -171)
+eventsHitches:SetWidth(302)
+eventsHitches:SetJustifyH("LEFT")
+
+local eventsWorst = AddWidget(eventsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+eventsWorst:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -188)
+eventsWorst:SetWidth(302)
+eventsWorst:SetJustifyH("LEFT")
+
+local eventsCorrelationRows = {}
+for i = 1, 3 do
+    local line = AddWidget(eventsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+    line:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -206 - (i - 1) * 14)
+    line:SetWidth(302)
+    line:SetJustifyH("LEFT")
+    eventsCorrelationRows[i] = line
+end
+
+local captureButton = CreateFrame("Button", nil, Performante, "UIPanelButtonTemplate")
+captureButton:SetWidth(116)
+captureButton:SetHeight(20)
+captureButton:SetPoint("BOTTOMRIGHT", Performante, "BOTTOMRIGHT", -12, 10)
+AddWidget(eventsWidgets, captureButton)
+
 local resetButton = CreateFrame("Button", nil, Performante, "UIPanelButtonTemplate")
 resetButton:SetWidth(72)
 resetButton:SetHeight(20)
@@ -742,6 +793,49 @@ local function DrawGraph()
     end
 end
 
+local function RefreshEvents()
+    local state = captureActive and L.CAPTURE_ACTIVE or L.CAPTURE_STOPPED
+    if captureAutoStopped then state = L.CAPTURE_LIMIT end
+    eventsState:SetText(state .. "  " .. string.format("%.1fs", captureClock) .. "  " .. captureTotal .. " " .. L.EVENT_COUNT)
+    captureButton:SetText(captureActive and L.STOP_CAPTURE or L.START_CAPTURE)
+
+    -- Sorting only on a visible UI refresh; never on the event callback path.
+    local ranked = {}
+    local i
+    for i = 1, table.getn(CAPTURE_EVENTS) do
+        local name = CAPTURE_EVENTS[i]
+        local entry = captureEntries[name]
+        if entry.count > 0 then
+            table.insert(ranked, { name = name, count = entry.count, rate = CaptureRecentRate(entry) })
+        end
+    end
+    table.sort(ranked, function(a, b)
+        if a.count == b.count then return a.name < b.name end
+        return a.count > b.count
+    end)
+    for i = 1, 5 do
+        if ranked[i] then
+            eventsRows[i]:SetText(string.format("%d. %s  %d (%.1f/s)", i, ranked[i].name, ranked[i].count, ranked[i].rate))
+        else
+            eventsRows[i]:SetText(i == 1 and L.NO_EVENTS or "")
+        end
+    end
+    eventsHitches:SetText(L.HITCH_ASSOCIATION .. ": " .. correlatedHitches .. " / " .. L.ISOLATED .. ": " .. isolatedHitches)
+    if worstCorrelatedHitchMs > 0 then
+        eventsWorst:SetText(L.WORST_CAPTURED .. ": " .. string.format("%.1f ms", worstCorrelatedHitchMs) .. "  " .. worstCorrelationEventCount .. " " .. L.VS_PRIOR .. " " .. worstCorrelationBaselineCount)
+        for i = 1, 3 do
+            if worstCorrelationTopCounts[i] > 0 then
+                eventsCorrelationRows[i]:SetText(worstCorrelationTopNames[i] .. ": " .. worstCorrelationTopCounts[i])
+            else
+                eventsCorrelationRows[i]:SetText("")
+            end
+        end
+    else
+        eventsWorst:SetText(L.NO_CAPTURED_HITCH)
+        for i = 1, 3 do eventsCorrelationRows[i]:SetText("") end
+    end
+end
+
 local function Refresh()
     if paused then
         pauseState:SetText("|cffffcc00" .. L.PAUSED .. "|r")
@@ -753,8 +847,10 @@ local function Refresh()
         RefreshComms()
     elseif currentView == "frametime" then
         RefreshFrametime()
-    else
+    elseif currentView == "graph" then
         DrawGraph()
+    else
+        RefreshEvents()
     end
 end
 
@@ -764,6 +860,7 @@ local function SetView(view)
     ShowGroup(commsWidgets, currentView == "comms")
     ShowGroup(frameWidgets, currentView == "frametime")
     ShowGroup(graphWidgets, currentView == "graph")
+    ShowGroup(eventsWidgets, currentView == "events")
 
     if currentView == "comms" then
         commsTab:Disable()
@@ -783,6 +880,7 @@ local function SetView(view)
         graphTab:Enable()
     end
 
+    if currentView == "events" then eventsTab:Disable() else eventsTab:Enable() end
     Refresh()
 end
 
@@ -882,6 +980,15 @@ end)
 
 graphTab:SetScript("OnClick", function()
     SetView("graph")
+end)
+
+eventsTab:SetScript("OnClick", function()
+    SetView("events")
+end)
+
+captureButton:SetScript("OnClick", function()
+    if captureActive then StopCapture(false) else StartCapture() end
+    Refresh()
 end)
 
 resetButton:SetScript("OnClick", function()
@@ -1003,12 +1110,17 @@ SlashCmdList["PERFORMANTE"] = function(msg)
     elseif command == "graph" then
         SetWindowShown(true)
         SetView("graph")
+    elseif command == "events" then
+        SetWindowShown(true)
+        SetView("events")
     elseif command == "capture start" then
         StartCapture()
         DEFAULT_CHAT_FRAME:AddMessage("Performante: event capture started (30-second maximum).")
+        if Performante:IsShown() and currentView == "events" then Refresh() end
     elseif command == "capture stop" then
         StopCapture(false)
         CaptureStatus()
+        if Performante:IsShown() and currentView == "events" then Refresh() end
     elseif command == "capture status" or command == "capture" then
         CaptureStatus()
     elseif command == "show" then
