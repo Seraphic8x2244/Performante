@@ -2,12 +2,12 @@
 
 ## Current
 - Branch: `dev`
-- Version: `0.4.1-dev`
+- Version: `0.4.2-dev` (Phase 3 UI code committed; expanded pre-runtime diagnostics pending)
 - Accepted runtime baseline: `0.3.0-dev` single-client matrix passed at runtime commit `42d0ba7ec034958d77579ebe0884c6c02755694b` with metadata/localization completed by `38f168a2c469da0d15c7c599fcb938a2bfb8c8f5`; later documentation-only commits do not change that accepted runtime.
 - Latest tested baseline: `0.3.0-dev` single-client runtime matrix described under Last Runtime Test.
 - Stable baseline: None; `main` currently contains only the repository README.
-- Goal: Preserve the accepted 0.3.0-dev runtime while completing all three agreed 0.4 diagnostic phases before requesting runtime testing.
-- Current scope boundary: Phase 1 bounded capture is implemented. Phase 2 hitch/event correlation is the current implementation scope. Phase 3 Events/Correlation UI follows in the next development chat. Runtime testing is deliberately deferred until Phases 1-3 are complete; Phase 4 real-hitch investigation remains post-runtime.
+- Goal: Preserve accepted 0.3.0-dev behavior; complete Phase 1–3 Events UI plus newly approved bounded multi-hitch history, prefix-only comms correlation and automatic CustomData reports before requesting the combined runtime test.
+- Current scope boundary: Phase 1 capture and Phase 2 worst-hitch correlation are implemented; a Phase 3 Events UI has been committed but is not fully validated. The expanded pre-runtime diagnostics below are approved but not implemented. Phase 4 real-hitch investigation remains deferred.
 
 ## Current Design / Development Contract
 
@@ -135,6 +135,18 @@
 - Do not begin Phase 3 during the Phase 2 chat. The handoff boundary, rather than an intermediate runtime gate, controls progression through Phases 1-3. Phase 4 remains blocked on the combined runtime acceptance.
 
 
+### Approved pre-runtime diagnostic completion (2026-10-10)
+The user explicitly expanded the pre-runtime Phase 1–3 completion gate. This supersedes the earlier restriction that Phase 3 must only display existing summaries. Implement these diagnostic essentials **before** the combined runtime gate; this is not permission to start Phase 4.
+
+- **Bounded per-hitch evidence:** Record each >50 ms hitch within a capture, not only the single worst. Retain its capture-relative timestamp, frame duration, 1-second trailing event totals, prior 1-second baseline, burst-associated/isolated classification, and a compact ranking of nearby event names and counts. Fix an explicit memory/entry ceiling and define truthful overflow/drop reporting; avoid expensive sorting or table allocation in the per-frame hot path where possible. Existing worst-hitch display remains a summary.
+- **Correlated addon communications:** During explicitly armed capture only, retain bounded, timestamped inbound and outbound message activity grouped by the **prefix only** (inbound `CHAT_MSG_ADDON arg1`; outbound `SendAddonMessage` first argument). Associate prefix counts/rates/direction with each hitch using the same documented timing windows. Do **not** retain message payload/`arg2`, channel/`arg3`, sender/`arg4`, destination, or arbitrary event arguments. Preserve the original 0.3 send wrapper's exact call/return behavior and the ordinary Comms tab.
+- **Automatic capture report:** On manual Stop or 30-second automatic stop, once instrumentation has been unregistered, write one detailed capture report to the Nampower `CustomData` directory if the compatible file-writing API is present. Include summary, every retained hitch (and explicit overflow count if any), event correlations and prefix-only comms correlations, with timestamps, comparison windows and clear *association is not causation* wording. Write only after capture has ended; no capture-time disk I/O. Handle missing/failed file API non-destructively with a clear UI/chat result; native no-Nampower diagnostics must continue to work. Verify actual Nampower API signature and safe file naming/path behavior against installed-supported documentation before implementing; do not assume the earlier example signature is proven.
+- **UI:** Keep a compact dedicated Events/Correlation tab within the accepted footprint and explicit capture controls. Preserve captured results until Reset or next Start, surface export success/failure, and make the completed report discoverable without a second status command.
+- **Analysis boundaries:** Events originate from the game/client; counted event bursts and communication prefixes are diagnostic associations, not reliable per-addon CPU attribution or proof of which addon caused the hitch. No speculative event-to-addon ownership mapping.
+- **Testing gate:** Finish implementation, check vanilla Lua 5.0.3 compatibility, inspect boundedness, pause/reset/hidden-window/auto-stop behavior and Nampower-absent fallback, then update this document and present **one combined** Phase 1–3 runtime matrix. Add report content, prefix-direction correlation, overflow handling and failed/unavailable export checks to that matrix. Phase 4 remains blocked until the combined gate is accepted.
+
+**Implementation status at this documentation change:** Not yet implemented: bounded multi-hitch history, capture-window prefix correlation and automatic Nampower file export. The Events tab was added in `0.4.2-dev` (commits `8552e80`, `0afc565`, `044a4a2`) but remains untested; static compiler validation and integrated checks are still outstanding. Do not represent the expanded requirements as complete.
+
 ## Recent Relevant Commits
 - Repository `main`: `bbe641fb6237fb740e338af766cca286f5c9e7f7` — initial repository commit.
 - `dev`: `c06d6b71f2296d92a8ecbcba1f13f977841551cc` — initial template-aligned Performante runtime baseline.
@@ -205,7 +217,7 @@
 - Not tested: Delivery to another client/recipient; Lua 5.0.3 canonical compiler check not run. Local self-receipt does not prove remote delivery.
 
 ### Next Runtime Test
-- Deliberately deferred until Phase 3 is implemented and statically checked.
+- Deliberately deferred until the expanded pre-runtime diagnostic completion scope above is implemented and statically checked.
 - The combined post-Phase-3 matrix must cover: accepted 0.3 Comms/Frametime/Graph regression; Phase 1 Start/Stop/status, Pause/Resume, Reset, 30-second safety stop and overhead observation; Phase 2 known event activity versus >50 ms hitch correlation, including both burst-associated and isolated outcomes where practical; Phase 3 Events/Correlation UI/control behavior, Graph interaction and hidden-window behavior.
 - Cross-client PERFTEST delivery remains optional 0.3 validation debt when a second client becomes available.
 
@@ -229,7 +241,7 @@
 - External/runtime prerequisites: None beyond a Vanilla WoW 1.12.1-compatible client.
 
 ## Exact Next Step
-In a fresh chat, verify the recorded handoff against remote `dev`, then implement Phase 3 only: a compact dedicated Events/Correlation view using the existing Phase 1 capture and Phase 2 correlation summaries. Preserve the accepted 0.3.0-dev baseline and do not request runtime testing until Phase 3 is implemented and statically checked. Then prepare the combined Phase 1-3 runtime matrix. Do not begin Phase 4.
+Verify remote `dev` HEAD and review the current `0.4.2-dev` Events UI code; implement the approved bounded all-hitch summaries, per-hitch prefix-only inbound/outbound comms correlation and automatic Nampower CustomData export with native fallback. Finish Phase 3 integration and static/compiler checks, update this status, then prepare the combined Phase 1–3 runtime matrix. Preserve 0.3.0-dev baseline. Do not begin Phase 4.
 
 ## 0.3 Implementation Status
 - Implemented native SendAddonMessage diagnostic wrapper and received CHAT_MSG_ADDON accounting, grouped by prefix, with In/Out/Total and five-second messages/sec columns in the unchanged Comms tab footprint.
