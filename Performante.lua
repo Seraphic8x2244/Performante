@@ -282,6 +282,7 @@ function evidence.Report()
     line("Hitches >50ms: " .. (correlatedHitches + isolatedHitches) .. " | retained: " ..
         table.getn(evidence.hitches) .. " | dropped at " .. evidence.MAX_HITCHES .. "-entry cap: " .. evidence.dropped)
     line("Prefix cap: " .. evidence.MAX_PREFIXES .. " | unassigned messages beyond prefix cap: " .. evidence.prefixOverflow)
+    line("Comms comparisons also use 1-second trailing/prior windows: counts are messages per second.")
     line("All captured events:")
     local i
     for i = 1, table.getn(CAPTURE_EVENTS) do
@@ -826,24 +827,25 @@ for i = 1, 5 do
 end
 
 local eventsExport = AddWidget(eventsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
-eventsExport:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -159)
+eventsExport:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -156)
+eventsExport:SetHeight(23)
 eventsExport:SetWidth(302)
 eventsExport:SetJustifyH("LEFT")
 
 local eventsHitches = AddWidget(eventsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
-eventsHitches:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -171)
+eventsHitches:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -182)
 eventsHitches:SetWidth(302)
 eventsHitches:SetJustifyH("LEFT")
 
 local eventsWorst = AddWidget(eventsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
-eventsWorst:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -188)
+eventsWorst:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -198)
 eventsWorst:SetWidth(302)
 eventsWorst:SetJustifyH("LEFT")
 
 local eventsCorrelationRows = {}
 for i = 1, 3 do
     local line = AddWidget(eventsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
-    line:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -206 - (i - 1) * 14)
+    line:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -214 - (i - 1) * 14)
     line:SetWidth(302)
     line:SetJustifyH("LEFT")
     eventsCorrelationRows[i] = line
@@ -983,13 +985,14 @@ local function RefreshEvents()
         if a.count == b.count then return a.name < b.name end
         return a.count > b.count
     end)
-    for i = 1, 5 do
+    for i = 1, 4 do
         if ranked[i] then
             eventsRows[i]:SetText(string.format("%d. %s  %d (%.1f/s)", i, ranked[i].name, ranked[i].count, ranked[i].rate))
         else
             eventsRows[i]:SetText(i == 1 and L.NO_EVENTS or "")
         end
     end
+    eventsRows[5]:SetText("")
     eventsExport:SetText(evidence.exportState)
     eventsHitches:SetText(L.HITCH_ASSOCIATION .. ": " .. correlatedHitches .. " / " .. L.ISOLATED .. ": " .. isolatedHitches ..
         "  kept " .. table.getn(evidence.hitches) .. " drop " .. evidence.dropped)
