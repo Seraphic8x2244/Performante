@@ -2,12 +2,12 @@
 
 ## Current
 - Branch: `dev`
-- Version: `0.4.2-dev` (Phase 3 UI code committed; expanded pre-runtime diagnostics pending)
+- Version: `0.4.3-dev` (pre-runtime evidence/report implementation; runtime untested)
 - Accepted runtime baseline: `0.3.0-dev` single-client matrix passed at runtime commit `42d0ba7ec034958d77579ebe0884c6c02755694b` with metadata/localization completed by `38f168a2c469da0d15c7c599fcb938a2bfb8c8f5`; later documentation-only commits do not change that accepted runtime.
 - Latest tested baseline: `0.3.0-dev` single-client runtime matrix described under Last Runtime Test.
 - Stable baseline: None; `main` currently contains only the repository README.
 - Goal: Preserve accepted 0.3.0-dev behavior; complete Phase 1–3 Events UI plus newly approved bounded multi-hitch history, prefix-only comms correlation and automatic CustomData reports before requesting the combined runtime test.
-- Current scope boundary: Phase 1 capture and Phase 2 worst-hitch correlation are implemented; a Phase 3 Events UI has been committed but is not fully validated. The expanded pre-runtime diagnostics below are approved but not implemented. Phase 4 real-hitch investigation remains deferred.
+- Current scope boundary: Phase 1 capture and Phase 2 worst-hitch correlation are implemented; a Phase 3 Events UI has been committed but is not fully validated. The expanded pre-runtime diagnostics have been implemented in 0.4.3-dev but are awaiting target-client runtime validation. Phase 4 real-hitch investigation remains deferred.
 
 ## Current Design / Development Contract
 
@@ -145,7 +145,7 @@ The user explicitly expanded the pre-runtime Phase 1–3 completion gate. This s
 - **Analysis boundaries:** Events originate from the game/client; counted event bursts and communication prefixes are diagnostic associations, not reliable per-addon CPU attribution or proof of which addon caused the hitch. No speculative event-to-addon ownership mapping.
 - **Testing gate:** Finish implementation, check vanilla Lua 5.0.3 compatibility, inspect boundedness, pause/reset/hidden-window/auto-stop behavior and Nampower-absent fallback, then update this document and present **one combined** Phase 1–3 runtime matrix. Add report content, prefix-direction correlation, overflow handling and failed/unavailable export checks to that matrix. Phase 4 remains blocked until the combined gate is accepted.
 
-**Implementation status at this documentation change:** Not yet implemented: bounded multi-hitch history, capture-window prefix correlation and automatic Nampower file export. The Events tab was added in `0.4.2-dev` (commits `8552e80`, `0afc565`, `044a4a2`) but remains untested; static compiler validation and integrated checks are still outstanding. Do not represent the expanded requirements as complete.
+**Implementation status:** 0.4.3-dev has implemented bounded multi-hitch evidence, capture-only prefix direction correlation and automatic Nampower CustomData report export. The Events tab is integrated with retention/overflow and export outcome. Static source invariants were checked; Lua 5.0.3 compiler validation remains unavailable here. All 0.4.x runtime behavior remains untested.
 
 ## Recent Relevant Commits
 - Repository `main`: `bbe641fb6237fb740e338af766cca286f5c9e7f7` — initial repository commit.
@@ -225,7 +225,7 @@ The user explicitly expanded the pre-runtime Phase 1–3 completion gate. This s
 - 0.3.0-dev single-client behavior remains the inherited accepted runtime baseline; cross-client delivery remains untested.
 - 0.4.0-dev Phase 1 bounded temporary event capture is implemented and statically reviewed; runtime validation is deferred.
 - 0.4.1-dev Phase 2 hitch/event correlation is implemented and statically reviewed; runtime validation is deferred.
-- Next development chat: implement Phase 3 dedicated compact Events/Correlation UI only, preserving the current capture/correlation data model unless a demonstrated implementation defect requires a narrow correction.
+- Phase 3 UI is implemented, including a compact report-status line; combined runtime validation remains pending.
 - After Phase 3 static checks, request the combined Phase 1-3 runtime matrix. Do not begin Phase 4 before that runtime acceptance.
 
 ## Deferred / Out of Scope
@@ -241,9 +241,38 @@ The user explicitly expanded the pre-runtime Phase 1–3 completion gate. This s
 - External/runtime prerequisites: None beyond a Vanilla WoW 1.12.1-compatible client.
 
 ## Exact Next Step
-Verify remote `dev` HEAD and review the current `0.4.2-dev` Events UI code; work in the approved order: (1) automatic Nampower CustomData capture export with native fallback, (2) prefix-only inbound/outbound comms correlation, (3) bounded all-hitch summaries. Finish Phase 3 integration and static/compiler checks, update this status, then prepare the combined Phase 1–3 runtime matrix. Preserve 0.3.0-dev baseline. Do not begin Phase 4.
+Run the combined Phase 1–3 runtime matrix below on 0.4.3-dev; report each check's pass/fail and attach one exported CustomData report. Confirm Lua 5.0.3 compilation when the canonical checker is available. Preserve 0.3.0-dev baseline. Do not begin Phase 4 without combined acceptance.
 
 ## 0.3 Implementation Status
 - Implemented native SendAddonMessage diagnostic wrapper and received CHAT_MSG_ADDON accounting, grouped by prefix, with In/Out/Total and five-second messages/sec columns in the unchanged Comms tab footprint.
 - Counts and rate buckets are session/reset scoped; Pause freezes the diagnostic clock and collection. Payloads are not stored.
 - Single-client runtime checks user-tested and passed on 2026-10-07. Remote recipient delivery not tested. Lua 5.0.3 compiler check not run; connector access does not expose a runnable checkout. 0.4 Phase 1 and Phase 2 are implemented and statically reviewed; their runtime validation is deliberately deferred until Phase 3 is complete.
+
+## 0.4.3-dev Pre-runtime Implementation Handoff (2026-10-10)
+- Remote dev was verified identical to handoff `e21a5c8bfb54d76944852ac9033f9ce55ef08cc1` before writing.
+- Implementation order followed approved original numbering 3-2-1-4-5-6: Nampower export; prefix-only comms; per-hitch history; Events integration; static review; test matrix.
+- Revision commits: `b34cc40935497c06675b02ea8708773d21ecf139` implementation, `0ebed292cedf13ca2f5818250c34d255204aea3a` metadata bump, `69a625e938db704fc76260000d1d126ff4d9273c` Events spacing and rate clarification.
+- Evidence persists until Reset or next Start, including after manual Stop and 30-second auto-stop. No file writes occur while capture is active.
+- Stop unregisters the diagnostic event set, disables capture, then builds a text report and calls `pcall(WriteCustomFile, filename, report, "w")` if available. This is the documented Nampower signature: two required strings and optional mode, no success return, errors raised on failure. A missing API leaves native diagnostics intact and surfaces the outcome in chat/Events UI.
+- Filename: `Performante_YYYYMMDD_HHMMSS_<GetTime-ms>_<capture-serial>.txt` (digits and underscores only, with .txt extension), relative to Nampower `CustomData`. Reports overwrite only a uniquely generated filename. This is not a guarantee against simultaneous clients with identical capture timing; avoid concurrent identical filenames when validating.
+- During armed, unpaused capture, inbound `CHAT_MSG_ADDON arg1` and outbound `SendAddonMessage` first argument are counted by prefix, direction, and 0.5-second ring bucket. Message payloads, channels, senders, destinations and arbitrary event args are not retained. The existing native send wrapper still forwards the original four arguments unchanged and returns its original result.
+- 64 distinct prefix records maximum, with separate count of messages whose prefix could not be allocated. Such untracked messages are not misattributed. The original always-on Comms tab is unchanged.
+- The engine retains up to 128 individual >50ms hitches per capture; later hitches increment `dropped` while aggregate burst/isolated totals and worst-hitch summary still advance. Each retained item records capture-relative time, milliseconds, trailing and previous one-second event totals, heuristic classification, top three event families, prefix-direction totals for both windows and top three nearby prefix totals.
+- All rankings are bounded to three entries. The new capture-only per-hitch scans are bounded by the fixed 42 events and maximum 64 prefixes; there is no per-occurrence raw payload log, sorting of capture history, or additional permanent instrumentation.
+- Export reports include every retained hitch, dropped and prefix overflow counts, top names/counts, all selected event totals and each tracked prefix's direction totals. One-second counts are also one-second rates. All associations explicitly warn against causality/per-addon CPU attribution.
+- The compact Events view shows capture status, top four events, retained/drop totals, worst correlation and the export result/path. Fifth former top-event row is intentionally cleared for the export line in the unchanged 330x286 footprint.
+- Source/static checks actually run: validated existence and sequencing of Stop unregistration before guarded file export; 128/64 caps; capture-only prefix recorder; no retained payload property; reset clearing; addon metadata bumped to 0.4.3-dev. This is a *source review*, not a Lua compiler pass.
+- **Not run:** canonical VanillaTemplate Lua 5.0.3 compiler (this session's executable environment cannot fetch the GitHub repository/VanillaTemplate source; GitHub connector access alone does not supply a runnable local checker); WoW client runtime; real Nampower export; performance measurement. Do not claim any of these passed.
+- Phase 4 remains out of scope. Accepted 0.3.0-dev runtime evidence is inherited; 0.4.3-dev delta is untested.
+
+### Combined Phase 1–3 Runtime Matrix — pending, no tests performed
+1. With Nampower loaded, open Comms, Frametime and Graph; verify accepted 0.3.0-dev traffic In/Out/Total/rate, graph/hitch counters, memory display, Reset/Pause, and window-hide background collection.
+2. Start capture from Events; confirm state/duration/top events update. Generate routine spell/combat/bag activity and inspect event counts. Observe overhead/FPS against no-capture baseline.
+3. With a second player or trusted addon test source, generate known incoming and outgoing prefix traffic during capture; confirm only prefix/direction appears in resulting report, with no message text, recipient, channel or sender.
+4. Generate >50ms frametime spikes with and without event bursts. Check timestamp ordering, trailing-vs-prior event and comms counts, burst-associated and isolated classifications, top events/prefixes and report totals. Temporal correlation does not assert causation.
+5. Check Pause freezes capture duration/buckets and hitch correlation, Resume restarts; hidden Events view continues capture. Check Reset clears retained history, overflow and export status; next Start also clears old evidence.
+6. Stop manually: capture event registration removed; one report written to Nampower `CustomData`; correct filename shown in chat and Events. Open report and check all retained hitch records, counts, one-second windows, prefix direction totals, overflow, headers and explicit uncertainty wording.
+7. Repeat capture to the 30-second automatic stop: confirm unregistration and exactly one automatic report; inspect retained state until reset/new start.
+8. Exercise safe overflow (e.g. sustained >50ms spikes sufficient to exceed 128 entries) if practical; verify retained cap and truthful dropped count. If 64-prefix cap is impractical, record it untested rather than guessing.
+9. Test without WriteCustomFile (Nampower absent/older) and with a controlled file-write error if possible: no Lua fatal error, visible unavailable/failed status, no data loss, normal native Comms/Frametime/Graph continued.
+10. Recheck accepted 0.3 diagnostics and controls after capture has ended. Record exact commit/version, individual outcomes and attach one text report. Do not proceed to Phase 4 until matrix is accepted.
