@@ -1,6 +1,6 @@
 -- Performante
 -- Vanilla WoW 1.12.1 / Lua 5.0.3
--- 0.4.2: compact Events view for existing bounded capture and correlation summaries.
+-- 0.4.3: bounded capture evidence, prefix correlation and CustomData reporting.
 
 local ADDON_NAME = "Performante"
 local ADDON_VERSION = GetAddOnMetadata(ADDON_NAME, "Version")
@@ -48,6 +48,7 @@ local worstCorrelationBaselineCount = 0
 local worstCorrelationTopNames = { "", "", "" }
 local worstCorrelationTopCounts = { 0, 0, 0 }
 
+local evidence = { hitches = {}, prefixes = {}, prefixList = {}, dropped = 0, prefixOverflow = 0, exportState = "No capture report yet", exportFile = "", serial = 0 }
 local counts = {}
 local sorted = {}
 local inboundMessages = 0
@@ -66,6 +67,7 @@ local function ClearCaptureData()
     captureClock = 0
     captureTotal = 0
     captureAutoStopped = false
+    if evidence.Reset then evidence.Reset() end
     correlatedHitches = 0
     isolatedHitches = 0
     worstCorrelatedHitchMs = 0
@@ -100,8 +102,10 @@ local function StopCapture(autoStopped)
             captureFrame:UnregisterEvent(CAPTURE_EVENTS[i])
         end
     end
+    local wasActive = captureActive
     captureActive = false
     captureAutoStopped = autoStopped and true or false
+    if evidence.Export and wasActive then evidence.Export() end
 end
 
 local function StartCapture()
@@ -170,6 +174,162 @@ local function CaptureEventWindowCount(entry, firstBucket, lastBucket)
     return sum
 end
 
+-- All evidence is scoped to an explicit 30-second capture. Event and prefix
+-- windows share the 0.5-second bucket clock; no payload is retained.
+evidence.MAX_HITCHES = 128
+evidence.MAX_PREFIXES = 64
+function evidence.Reset()
+    evidence.hitches = {}
+    evidence.prefixes = {}
+    evidence.prefixList = {}
+    evidence.dropped = 0
+    evidence.prefixOverflow = 0
+    evidence.exportState = "No capture report yet"
+    evidence.exportFile = ""
+    evidence.serial = evidence.serial + 1
+end
+
+function evidence.Prefix(prefix, outbound)
+    if not captureActive or paused or not monitoringReady then return end
+    if not prefix or prefix == "" then prefix = "<no prefix>" end
+    local p = evidence.prefixes[prefix]
+    if not p then
+        if table.getn(evidence.prefixList) >= evidence.MAX_PREFIXES then
+            evidence.prefixOverflow = evidence.prefixOverflow + 1
+            return
+        end
+        p = { name = prefix, inbound = 0, outbound = 0, inBuckets = {}, outBuckets = {}, stamps = {} }
+        evidence.prefixes[prefix] = p
+        table.insert(evidence.prefixList, p)
+    end
+    if outbound then p.outbound = p.outbound + 1 else p.inbound = p.inbound + 1 end
+    local bucket = math.floor(captureClock / CAPTURE_BUCKET_SECONDS)
+    local slot = math.mod(bucket, CAPTURE_BUCKETS) + 1
+    if p.stamps[slot] ~= bucket then
+        p.stamps[slot] = bucket
+        p.inBuckets[slot] = 0
+        p.outBuckets[slot] = 0
+    end
+    if outbound then
+        p.outBuckets[slot] = p.outBuckets[slot] + 1
+    else
+        p.inBuckets[slot] = p.inBuckets[slot] + 1
+    end
+end
+
+function evidence.Rank(list, name, count, inbound, outbound)
+    if count <= 0 then return end
+    local pos
+    for pos = 1, 3 do
+        if not list[pos] or count > list[pos].count or (count == list[pos].count and name < list[pos].name) then
+            table.insert(list, pos, { name = name, count = count, inbound = inbound, outbound = outbound })
+            if table.getn(list) > 3 then table.remove(list, 4) end
+            return
+        end
+    end
+end
+
+function evidence.Hitch(frameMs, bucket, eventCount, baselineCount, burst)
+    if table.getn(evidence.hitches) >= evidence.MAX_HITCHES then
+        evidence.dropped = evidence.dropped + 1
+        return
+    end
+    local h = { time = captureClock, ms = frameMs, events = eventCount,
+        baseline = baselineCount, burst = burst, topEvents = {}, topPrefixes = {},
+        incoming = 0, outgoing = 0, previousIncoming = 0, previousOutgoing = 0 }
+    local i
+    for i = 1, table.getn(CAPTURE_EVENTS) do
+        local name = CAPTURE_EVENTS[i]
+        local n = CaptureEventWindowCount(captureEntries[name], bucket - 1, bucket)
+        evidence.Rank(h.topEvents, name, n)
+    end
+    for i = 1, table.getn(evidence.prefixList) do
+        local p = evidence.prefixList[i]
+        local ins, outs, pi, po = 0, 0, 0, 0
+        local b
+        for b = bucket - 3, bucket do
+            if b >= 0 then
+                local slot = math.mod(b, CAPTURE_BUCKETS) + 1
+                if p.stamps[slot] == b then
+                    if b >= bucket - 1 then
+                        ins = ins + p.inBuckets[slot]
+                        outs = outs + p.outBuckets[slot]
+                    else
+                        pi = pi + p.inBuckets[slot]
+                        po = po + p.outBuckets[slot]
+                    end
+                end
+            end
+        end
+        h.incoming = h.incoming + ins
+        h.outgoing = h.outgoing + outs
+        h.previousIncoming = h.previousIncoming + pi
+        h.previousOutgoing = h.previousOutgoing + po
+        evidence.Rank(h.topPrefixes, p.name, ins + outs, ins, outs)
+    end
+    table.insert(evidence.hitches, h)
+end
+
+function evidence.Report()
+    local lines = {}
+    local function line(value) table.insert(lines, value) end
+    line("Performante " .. (ADDON_VERSION or "") .. " | Capture evidence")
+    line("Duration: " .. string.format("%.3fs", captureClock) .. " | Events: " .. captureTotal ..
+        " | Auto-stop: " .. tostring(captureAutoStopped))
+    line("Event association heuristic: trailing 1s (current 0.5s bucket + prior) compared to preceding 1s.")
+    line("Burst = at least 10 additional events AND at least 50% growth over preceding window.")
+    line("Timestamps relative to capture clock; associations are temporal, NOT causation or per-addon CPU attribution.")
+    line("Hitches >50ms: " .. (correlatedHitches + isolatedHitches) .. " | retained: " ..
+        table.getn(evidence.hitches) .. " | dropped at " .. evidence.MAX_HITCHES .. "-entry cap: " .. evidence.dropped)
+    line("Prefix cap: " .. evidence.MAX_PREFIXES .. " | unassigned messages beyond prefix cap: " .. evidence.prefixOverflow)
+    line("All captured events:")
+    local i
+    for i = 1, table.getn(CAPTURE_EVENTS) do
+        local name = CAPTURE_EVENTS[i]
+        line("  " .. name .. ": " .. captureEntries[name].count)
+    end
+    line("All tracked communications (prefix only):")
+    for i = 1, table.getn(evidence.prefixList) do
+        local p = evidence.prefixList[i]
+        line("  " .. p.name .. " | inbound=" .. p.inbound .. " outbound=" .. p.outbound)
+    end
+    for i = 1, table.getn(evidence.hitches) do
+        local h = evidence.hitches[i]
+        line(string.format("HITCH %d | t=%.3fs | %.1fms | %s | events trailing=%d prior=%d | inbound trailing=%d prior=%d | outbound trailing=%d prior=%d",
+            i, h.time, h.ms, h.burst and "burst-associated" or "isolated",
+            h.events, h.baseline, h.incoming, h.previousIncoming, h.outgoing, h.previousOutgoing))
+        local j
+        for j = 1, table.getn(h.topEvents) do
+            local e = h.topEvents[j]
+            line("  event " .. e.name .. " " .. e.count)
+        end
+        for j = 1, table.getn(h.topPrefixes) do
+            local p = h.topPrefixes[j]
+            line("  prefix " .. p.name .. " inbound=" .. p.inbound .. " outbound=" .. p.outbound)
+        end
+    end
+    return table.concat(lines, "\n") .. "\n"
+end
+
+function evidence.Export()
+    if type(WriteCustomFile) ~= "function" then
+        evidence.exportState = "Export unavailable: Nampower WriteCustomFile not present"
+        DEFAULT_CHAT_FRAME:AddMessage("Performante: " .. evidence.exportState)
+        return
+    end
+    -- WoW date() plus client uptime/serial limits filename collisions; no path separators.
+    local filename = "Performante_" .. date("%Y%m%d_%H%M%S") .. "_" ..
+        math.floor(GetTime() * 1000) .. "_" .. evidence.serial .. ".txt"
+    local ok, err = pcall(WriteCustomFile, filename, evidence.Report(), "w")
+    if ok then
+        evidence.exportFile = filename
+        evidence.exportState = "Saved CustomData/" .. filename
+    else
+        evidence.exportState = "Export failed: " .. tostring(err)
+    end
+    DEFAULT_CHAT_FRAME:AddMessage("Performante: " .. evidence.exportState)
+end
+
 local function RecordHitchCorrelation(frameMs)
     if not captureActive or paused or frameMs <= 50 then return end
 
@@ -188,6 +348,8 @@ local function RecordHitchCorrelation(frameMs)
     else
         isolatedHitches = isolatedHitches + 1
     end
+    evidence.Hitch(frameMs, bucket, eventCount, baselineCount,
+        eventCount >= baselineCount + 10 and eventCount * 2 >= baselineCount * 3)
 
     if frameMs > worstCorrelatedHitchMs then
         local i
@@ -242,6 +404,8 @@ local function CaptureStatus()
         DEFAULT_CHAT_FRAME:AddMessage("  " .. ranked[i].name .. ": " .. ranked[i].count .. " (" .. string.format("%.1f/s", ranked[i].rate) .. ")")
     end
     DEFAULT_CHAT_FRAME:AddMessage("  >50ms hitch correlation: " .. correlatedHitches .. " burst-associated, " .. isolatedHitches .. " isolated")
+    DEFAULT_CHAT_FRAME:AddMessage("  Retained hitches: " .. table.getn(evidence.hitches) ..
+        ", dropped: " .. evidence.dropped .. " | " .. evidence.exportState)
     if worstCorrelatedHitchMs > 0 then
         DEFAULT_CHAT_FRAME:AddMessage("  Worst captured hitch: " .. string.format("%.1f ms", worstCorrelatedHitchMs) .. ", events " .. worstCorrelationEventCount .. " vs prior " .. worstCorrelationBaselineCount)
         for i = 1, 3 do
@@ -271,6 +435,7 @@ local function RecordMessage(prefix, outbound)
         inboundMessages = inboundMessages + 1
     end
     entry.total = entry.total + 1
+    evidence.Prefix(prefix, outbound)
     local second = math.floor(commsClock)
     local slot = math.mod(second, RATE_BUCKETS) + 1
     if entry.seconds[slot] ~= second then
@@ -660,6 +825,11 @@ for i = 1, 5 do
     eventsRows[i] = line
 end
 
+local eventsExport = AddWidget(eventsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall"))
+eventsExport:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -159)
+eventsExport:SetWidth(302)
+eventsExport:SetJustifyH("LEFT")
+
 local eventsHitches = AddWidget(eventsWidgets, Performante:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"))
 eventsHitches:SetPoint("TOPLEFT", Performante, "TOPLEFT", 14, -171)
 eventsHitches:SetWidth(302)
@@ -820,7 +990,9 @@ local function RefreshEvents()
             eventsRows[i]:SetText(i == 1 and L.NO_EVENTS or "")
         end
     end
-    eventsHitches:SetText(L.HITCH_ASSOCIATION .. ": " .. correlatedHitches .. " / " .. L.ISOLATED .. ": " .. isolatedHitches)
+    eventsExport:SetText(evidence.exportState)
+    eventsHitches:SetText(L.HITCH_ASSOCIATION .. ": " .. correlatedHitches .. " / " .. L.ISOLATED .. ": " .. isolatedHitches ..
+        "  kept " .. table.getn(evidence.hitches) .. " drop " .. evidence.dropped)
     if worstCorrelatedHitchMs > 0 then
         eventsWorst:SetText(L.WORST_CAPTURED .. ": " .. string.format("%.1f ms", worstCorrelatedHitchMs) .. "  " .. worstCorrelationEventCount .. " " .. L.VS_PRIOR .. " " .. worstCorrelationBaselineCount)
         for i = 1, 3 do
